@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>商品詳細 | Harvest & Co.</title>
+  <meta name="description" content="商品の詳細情報、栄養成分、および関連商品をご覧いただけます。">
+  
+  <!-- CSS Link -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Header Placeholder (Injected via cart.js) -->
+  <div id="header-placeholder"></div>
+
+  <main class="container section-padding">
+    <!-- Back to Shop Link -->
+    <a href="index.html" class="back-link">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+      </svg>
+      ホームに戻る
+    </a>
+
+    <!-- Detail Box -->
+    <div id="product-detail-container">
+      <!-- Injected by product-detail.js -->
+    </div>
+
+    <!-- Related Products Section -->
+    <section class="related-section">
+      <h2 class="related-title">こちらの商品もおすすめです</h2>
+      <div class="product-grid" id="related-grid">
+        <!-- Injected dynamically -->
+      </div>
+    </section>
+  </main>
+
+  <!-- Cart Drawer Placeholder (Injected via cart.js) -->
+  <div id="drawer-placeholder"></div>
+
+  <!-- Footer Placeholder (Injected via cart.js) -->
+  <div id="footer-placeholder"></div>
+
+  <!-- Javascript Scripts -->
+  <script src="js/products.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/product-detail.js"></script>
+</body>
+</html>

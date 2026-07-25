@@ -1,0 +1,12 @@
+.git
+.gitignore
+.gemini
+Dockerfile
+*.js
+
+*.py
+!js/
+!css/
+README.md
+DESIGN.md
+products.csv
