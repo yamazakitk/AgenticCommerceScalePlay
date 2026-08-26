@@ -1,0 +1,13 @@
+{
+  "trainingPhrases": [
+    { "parts": [{ "text": "トマト", "parameterId": "query" }, { "text": "を探して" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "おすすめの" }, { "text": "果物", "parameterId": "query" }, { "text": "はある？" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "りんご", "parameterId": "query" }, { "text": "が欲しい" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "お肉", "parameterId": "query" }, { "text": "を見せて" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "新鮮な" }, { "text": "野菜", "parameterId": "query" }, { "text": "を検索" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "コーヒー", "parameterId": "query" }, { "text": "ある？" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "パン", "parameterId": "query" }, { "text": "を探しています" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "鮮魚", "parameterId": "query" }, { "text": "を見たい" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "商品を検索したい" }], "repeatCount": 1, "languageCode": "ja" }
+  ]
+}

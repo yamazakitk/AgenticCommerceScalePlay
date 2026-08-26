@@ -1,0 +1,11 @@
+{
+  "displayName": "Harvest Commerce Agent",
+  "defaultLanguageCode": "ja",
+  "supportedLanguageCodes": [],
+  "timeZone": "Asia/Tokyo",
+  "description": "Harvest & Co. の Agentic Commerce エージェント。商品検索、カルーセル(カード)表示、カート追加に対応します。",
+  "speechToTextSettings": {},
+  "startFlow": "Default Start Flow",
+  "enableStackdriverLogging": false,
+  "enableSpellCorrection": false
+}

@@ -5,10 +5,15 @@ let activeCategory = 'all';
 let searchKeyword = '';
 let currentSort = 'default';
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // 1. Inject shared layouts (header, cart drawer, footer)
   if (typeof window.injectLayout === 'function') {
     window.injectLayout('home');
+  }
+
+  // Wait until the product catalog is loaded (Firestore or local fallback)
+  if (window.productsReady) {
+    await window.productsReady;
   }
 
   // 2. Parse URL parameters for direct linking (e.g. index.html?category=meat or index.html?search=tomato)

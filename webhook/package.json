@@ -1,0 +1,14 @@
+{
+  "name": "harvest-agent-webhook",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dialogflow CX webhook for Harvest & Co. product search and add-to-cart",
+  "main": "index.js",
+  "scripts": {
+    "start": "functions-framework --target=harvestAgentWebhook"
+  },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.4.0",
+    "firebase-admin": "^12.0.0"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "22222222-2222-2222-2222-222222222202",
+  "displayName": "search.products",
+  "priority": 500000,
+  "parameters": [
+    {
+      "id": "query",
+      "entityType": "projects/-/locations/-/agents/-/entityTypes/sys.any"
+    }
+  ]
+}

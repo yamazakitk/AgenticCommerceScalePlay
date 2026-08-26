@@ -1,0 +1,11 @@
+{
+  "id": "22222222-2222-2222-2222-222222222203",
+  "displayName": "add.to.cart",
+  "priority": 500000,
+  "parameters": [
+    {
+      "id": "item",
+      "entityType": "projects/-/locations/-/agents/-/entityTypes/sys.any"
+    }
+  ]
+}

@@ -3,10 +3,15 @@
 let currentProduct = null;
 let currentQuantity = 1;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // 1. Inject shared layouts (header, cart drawer, footer)
   if (typeof window.injectLayout === 'function') {
     window.injectLayout('home');
+  }
+
+  // Wait until the product catalog is loaded (Firestore or local fallback)
+  if (window.productsReady) {
+    await window.productsReady;
   }
 
   // 2. Parse product ID from query parameters

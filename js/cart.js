@@ -32,9 +32,9 @@ function saveCart() {
 // Add item to cart
 function addToCart(productId, quantity = 1) {
   loadCart();
-  
-  // Find product details from window.products (loaded in products.js)
-  const product = window.products.find(p => p.id === productId);
+
+  // Find product details from window.products (loaded from Firestore or local fallback in products.js)
+  const product = (window.products || []).find(p => p.id === productId);
   if (!product) {
     console.error('Product not found:', productId);
     return;

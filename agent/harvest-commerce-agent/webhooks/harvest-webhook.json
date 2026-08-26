@@ -1,0 +1,9 @@
+{
+  "name": "33333333-3333-3333-3333-333333333301",
+  "displayName": "harvest-webhook",
+  "genericWebService": {
+    "uri": "https://REPLACE-WITH-YOUR-WEBHOOK-URL.a.run.app",
+    "requestHeaders": {}
+  },
+  "timeout": "5s"
+}

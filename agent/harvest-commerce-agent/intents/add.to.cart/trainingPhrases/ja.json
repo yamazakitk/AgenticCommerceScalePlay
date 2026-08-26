@@ -1,0 +1,10 @@
+{
+  "trainingPhrases": [
+    { "parts": [{ "text": "トマト", "parameterId": "item" }, { "text": "をカートに入れて" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "りんご", "parameterId": "item" }, { "text": "をカートに追加して" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "牛乳", "parameterId": "item" }, { "text": "を買いたい" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "はちみつ", "parameterId": "item" }, { "text": "をカゴに追加" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "醤油", "parameterId": "item" }, { "text": "を注文したい" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "いちご", "parameterId": "item" }, { "text": "をカートインして" }], "repeatCount": 1, "languageCode": "ja" }
+  ]
+}

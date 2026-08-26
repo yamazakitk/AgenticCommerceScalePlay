@@ -1,0 +1,10 @@
+{
+  "trainingPhrases": [
+    { "parts": [{ "text": "こんにちは" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "やあ" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "はじめまして" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "おはよう" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "こんばんは" }], "repeatCount": 1, "languageCode": "ja" },
+    { "parts": [{ "text": "ハロー" }], "repeatCount": 1, "languageCode": "ja" }
+  ]
+}

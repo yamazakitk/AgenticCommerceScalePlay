@@ -1,0 +1,12 @@
+{
+  "name": "agentic-commerce-firestore-import",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Import Harvest & Co. product catalog into Firestore",
+  "scripts": {
+    "import": "node import-products-to-firestore.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}

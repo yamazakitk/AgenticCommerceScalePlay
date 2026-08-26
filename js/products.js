@@ -1,6 +1,11 @@
 // Product Database for Harvest & Co.
+//
+// 商品データの取得元は Firestore です (js/firebase-config.js で接続設定)。
+// Firebase が未設定の場合や読み込みに失敗した場合は、以下のローカル配列に
+// フォールバックします。各ページは window.productsReady (Promise) を await
+// してから window.products を参照してください。
 
-const products = [
+const localProducts = [
   // === VEGETABLES (野菜) ===
   {
     id: 1,
@@ -578,11 +583,68 @@ const products = [
   }
 ];
 
+// ==========================================================================
+// FIRESTORE INTEGRATION
+// ==========================================================================
+// Firebase Web SDK (ESM, CDN) を動的 import して Firestore から商品カタログを
+// 読み込みます。firebase-config.js が未設定 (YOUR_ プレフィックスのまま) の
+// 場合はローカルカタログをそのまま使用します。
+
+const FIREBASE_SDK_VERSION = "10.12.2";
+
+function isFirebaseConfigured() {
+  const config = typeof window !== "undefined" ? window.FIREBASE_CONFIG : null;
+  return !!(config && config.apiKey && !config.apiKey.startsWith("YOUR_") &&
+            config.projectId && !config.projectId.startsWith("YOUR_"));
+}
+
+async function loadProductsFromFirestore() {
+  const base = `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}`;
+  const [{ initializeApp }, { getFirestore, collection, getDocs }] = await Promise.all([
+    import(`${base}/firebase-app.js`),
+    import(`${base}/firebase-firestore.js`)
+  ]);
+
+  const app = initializeApp(window.FIREBASE_CONFIG);
+  const db = getFirestore(app);
+  const collectionName = window.FIRESTORE_PRODUCTS_COLLECTION || "products";
+  const snapshot = await getDocs(collection(db, collectionName));
+
+  const loaded = snapshot.docs.map(doc => {
+    const data = doc.data();
+    // ページ側は数値IDで検索するため、IDを数値に正規化する
+    return { ...data, id: Number(data.id ?? doc.id) };
+  });
+
+  loaded.sort((a, b) => a.id - b.id);
+  return loaded;
+}
+
 // If using ES Modules, we export this. In simple static HTML sites we can bind to window.
 if (typeof window !== "undefined") {
-  window.products = products;
+  // フォールバック値を即時バインド (Firestore 読み込み完了後に置き換わる)
+  window.products = localProducts;
+
+  window.productsReady = (async () => {
+    if (!isFirebaseConfigured()) {
+      console.info("[Harvest & Co.] Firebase 未設定のため、ローカル商品カタログを使用します。");
+      return window.products;
+    }
+    try {
+      const loaded = await loadProductsFromFirestore();
+      if (loaded.length > 0) {
+        window.products = loaded;
+        console.info(`[Harvest & Co.] Firestore から ${loaded.length} 件の商品を読み込みました。`);
+      } else {
+        console.warn("[Harvest & Co.] Firestore のコレクションが空です。ローカルカタログにフォールバックします。");
+      }
+    } catch (e) {
+      console.error("[Harvest & Co.] Firestore からの読み込みに失敗しました。ローカルカタログにフォールバックします。", e);
+    }
+    return window.products;
+  })();
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = products;
+  module.exports = localProducts;
 }

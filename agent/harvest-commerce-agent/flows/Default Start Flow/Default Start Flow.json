@@ -1,0 +1,96 @@
+{
+  "name": "00000000-0000-0000-0000-000000000000",
+  "displayName": "Default Start Flow",
+  "description": "A start flow created along with the agent",
+  "transitionRoutes": [
+    {
+      "name": "11111111-1111-1111-1111-111111111101",
+      "intent": "Default Welcome Intent",
+      "triggerFulfillment": {
+        "messages": [
+          {
+            "text": {
+              "text": [
+                "いらっしゃいませ！Harvest & Co. のお買い物アシスタントです。\n「トマトを探して」のように話しかけていただくと、商品をお探しします。"
+              ]
+            },
+            "languageCode": "ja"
+          },
+          {
+            "payload": {
+              "richContent": [
+                [
+                  {
+                    "type": "chips",
+                    "options": [
+                      { "text": "トマトを探して" },
+                      { "text": "おすすめの果物はある？" },
+                      { "text": "お肉を見せて" },
+                      { "text": "パンを探しています" }
+                    ]
+                  }
+                ]
+              ]
+            },
+            "languageCode": "ja"
+          }
+        ]
+      }
+    },
+    {
+      "name": "11111111-1111-1111-1111-111111111102",
+      "intent": "search.products",
+      "triggerFulfillment": {
+        "webhook": "harvest-webhook",
+        "tag": "search"
+      }
+    },
+    {
+      "name": "11111111-1111-1111-1111-111111111103",
+      "intent": "add.to.cart",
+      "triggerFulfillment": {
+        "webhook": "harvest-webhook",
+        "tag": "add-to-cart"
+      }
+    }
+  ],
+  "eventHandlers": [
+    {
+      "name": "11111111-1111-1111-1111-111111111201",
+      "event": "sys.no-match-default",
+      "triggerFulfillment": {
+        "messages": [
+          {
+            "text": {
+              "text": [
+                "すみません、うまく聞き取れませんでした。「トマトを探して」「りんごをカートに入れて」のようにお試しください。"
+              ]
+            },
+            "languageCode": "ja"
+          }
+        ]
+      }
+    },
+    {
+      "name": "11111111-1111-1111-1111-111111111202",
+      "event": "sys.no-input-default",
+      "triggerFulfillment": {
+        "messages": [
+          {
+            "text": {
+              "text": [
+                "お探しの商品はありますか？「野菜を検索」のように話しかけてください。"
+              ]
+            },
+            "languageCode": "ja"
+          }
+        ]
+      }
+    }
+  ],
+  "nluSettings": {
+    "modelType": "MODEL_TYPE_ADVANCED",
+    "classificationThreshold": 0.3,
+    "modelTrainingMode": "MODEL_TRAINING_MODE_AUTOMATIC"
+  }
+}
