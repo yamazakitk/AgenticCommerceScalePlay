@@ -16,3 +16,19 @@ window.FIREBASE_CONFIG = {
 
 // 商品データを格納している Firestore コレクション名
 window.FIRESTORE_PRODUCTS_COLLECTION = "products";
+
+// ==========================================
+// Vertex AI Search for Commerce (Google Cloud Retail API) 設定
+// ==========================================
+window.COMMERCE_SEARCH_CONFIG = {
+  enabled: true,
+  projectId: "yamazakitlab",
+  location: "global",
+  catalogId: "default_catalog",
+  servingConfigId: "default_search",
+  // Cloud Run にデプロイされた Retail API プロキシエンドポイント
+  apiUrl: "https://harvest-agent-webhook-800053188430.asia-northeast1.run.app/api/search"
+};
+
+// 後方互換用
+window.COMMERCE_SEARCH_API_URL = window.COMMERCE_SEARCH_CONFIG.apiUrl;

@@ -261,7 +261,8 @@ function injectLayout(activeTab = 'home') {
     }
   }
 
-  const searchPlaceholder = isConfigured ? "AI Commerce Search で検索..." : "新鮮な食材を検索...";
+  const isCommerceSearch = !!window.COMMERCE_SEARCH_API_URL || isConfigured;
+  const searchPlaceholder = isCommerceSearch ? "AI Commerce Search で食材を検索..." : "新鮮な食材を検索...";
 
   // 1. Inject Header
   const headerPlaceholder = document.getElementById('header-placeholder');
@@ -278,7 +279,7 @@ function injectLayout(activeTab = 'home') {
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
               <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
             </svg>
-            <input type="text" id="search-input" placeholder="${searchPlaceholder}" onkeyup="handleHeaderSearch(event)">
+            <input type="text" id="search-input" placeholder="${searchPlaceholder}" oninput="handleHeaderSearch(event)" onkeyup="handleHeaderSearch(event)">
           </div>
 
           <div class="header-actions">
@@ -402,25 +403,32 @@ function injectLayout(activeTab = 'home') {
   updateDrawerUI();
 }
 
-// Handle header search (redirects to home and triggers filtering if on another page)
+// Handle header search (real-time filtering on index.html with debounce, or Enter key)
+let headerSearchDebounceTimer = null;
 function handleHeaderSearch(event) {
-  const configId = window.VERTEX_AI_SEARCH_CONFIG_ID || 'YOUR_VERTEX_AI_SEARCH_CONFIG_ID';
-  const isConfigured = configId && !configId.startsWith('YOUR_');
-  if (isConfigured) {
-    return; // Let Vertex AI Search widget handle the search
-  }
+  const query = event.target.value.trim();
+  const isOnCatalog = window.location.pathname.includes('index.html') || window.location.pathname === '/' || window.location.pathname.endsWith('/AgenticCommerceScalePlay/');
 
   if (event.key === 'Enter') {
-    const query = event.target.value.trim();
-    if (window.location.pathname.includes('index.html') || window.location.pathname === '/' || window.location.pathname.endsWith('/AgenticCommerceScalePlay/')) {
-      // We are on index.html, trigger filter directly
+    if (headerSearchDebounceTimer) clearTimeout(headerSearchDebounceTimer);
+    if (isOnCatalog) {
       if (typeof window.filterAndRenderProducts === 'function') {
         window.filterAndRenderProducts();
       }
     } else {
-      // Redirect to index.html with query parameter
       window.location.href = `index.html?search=${encodeURIComponent(query)}`;
     }
+    return;
+  }
+
+  // On input change while on catalog, debounce filter
+  if (isOnCatalog && event.type === 'input') {
+    if (headerSearchDebounceTimer) clearTimeout(headerSearchDebounceTimer);
+    headerSearchDebounceTimer = setTimeout(() => {
+      if (typeof window.filterAndRenderProducts === 'function') {
+        window.filterAndRenderProducts();
+      }
+    }, 250);
   }
 }
 

@@ -76,8 +76,11 @@ function handleSortChange() {
   }
 }
 
+// Track async search request id to prevent race conditions
+let currentSearchRequestId = 0;
+
 // Main filter & sort calculation and DOM rendering
-function filterAndRenderProducts() {
+async function filterAndRenderProducts() {
   const productGrid = document.getElementById('product-grid');
   const noResults = document.getElementById('no-results');
   const catalogTitle = document.getElementById('catalog-title');
@@ -87,7 +90,7 @@ function filterAndRenderProducts() {
   // Retrieve Search Input from Header
   const searchBarInput = document.getElementById('search-input');
   if (searchBarInput) {
-    searchKeyword = searchBarInput.value.trim().toLowerCase();
+    searchKeyword = searchBarInput.value.trim();
   }
 
   // Set catalog visual title
@@ -103,22 +106,54 @@ function filterAndRenderProducts() {
     catalogTitle.textContent = titleText;
   }
 
-  // 1. Filter products
-  let filtered = window.products.filter(product => {
-    // Category filter
-    const matchesCategory = activeCategory === 'all' || product.category === activeCategory;
-    
-    // Search keyword filter
-    const matchesSearch = !searchKeyword || 
-      product.name.toLowerCase().includes(searchKeyword) ||
-      product.description.toLowerCase().includes(searchKeyword) ||
-      product.origin.toLowerCase().includes(searchKeyword) ||
-      product.categoryName.toLowerCase().includes(searchKeyword);
+  const requestId = ++currentSearchRequestId;
+  let filtered = null;
+  let isCommerceRanked = false;
 
-    return matchesCategory && matchesSearch;
-  });
+  // 1. If searchKeyword is specified and COMMERCE_SEARCH_API_URL is configured, query Retail Search
+  if (searchKeyword && window.COMMERCE_SEARCH_API_URL) {
+    try {
+      console.log(`[AI Commerce Search] Querying Retail Search API for: "${searchKeyword}"`);
+      const resp = await fetch(`${window.COMMERCE_SEARCH_API_URL}?q=${encodeURIComponent(searchKeyword)}`);
+      if (requestId !== currentSearchRequestId) return; // Discard outdated search response
+      if (resp.ok) {
+        const data = await resp.json();
+        console.log(`[AI Commerce Search] API Response:`, data);
+        if (data.productIds && data.productIds.length > 0) {
+          const idMap = new Map((window.products || []).map(p => [String(p.id), p]));
+          const matched = data.productIds.map(id => idMap.get(String(id))).filter(Boolean);
+          if (activeCategory === 'all') {
+            filtered = matched;
+          } else {
+            filtered = matched.filter(p => p.category === activeCategory);
+          }
+          isCommerceRanked = true;
+          if (catalogTitle) {
+            catalogTitle.innerHTML = `「${searchKeyword}」の検索結果 <span style="font-size: 0.75rem; font-weight: normal; background: #E8F5E9; color: #2E7D32; padding: 3px 10px; border-radius: 12px; margin-left: 8px; vertical-align: middle;">✨ Vertex AI Search for Commerce</span>`;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[AI Commerce Search] API request failed, using local filter fallback:', err);
+    }
+  }
 
-  // 2. Sort products
+  // 2. Fallback to local keyword filter if not filtered by Commerce Search
+  if (filtered === null) {
+    const kw = searchKeyword.toLowerCase();
+    filtered = (window.products || []).filter(product => {
+      const matchesCategory = activeCategory === 'all' || product.category === activeCategory;
+      const matchesSearch = !kw || 
+        product.name.toLowerCase().includes(kw) ||
+        product.description.toLowerCase().includes(kw) ||
+        product.origin.toLowerCase().includes(kw) ||
+        product.categoryName.toLowerCase().includes(kw);
+
+      return matchesCategory && matchesSearch;
+    });
+  }
+
+  // 3. Sort products (if explicit sort selected, or if not already ranked by AI)
   if (currentSort === 'price-asc') {
     filtered.sort((a, b) => a.price - b.price);
   } else if (currentSort === 'price-desc') {
@@ -127,7 +162,7 @@ function filterAndRenderProducts() {
     filtered.sort((a, b) => b.rating - a.rating);
   }
 
-  // 3. Render DOM
+  // 4. Render DOM
   if (filtered.length === 0) {
     productGrid.style.display = 'none';
     if (noResults) noResults.style.display = 'block';
