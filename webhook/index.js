@@ -1,22 +1,27 @@
-// Harvest & Co. — CX Agent Studio (Dialogflow CX) Webhook
+// Harvest & Co. — CX Agent Studio (Dialogflow CX) Webhook & AI Commerce Search Proxy
 //
-// Firestore の "products" コレクションを検索し、Dialogflow Messenger の
-// richContent (カード型カルーセル + カート追加ボタン) を返します。
+// 1. Vertex AI Search for Commerce (Google Cloud Retail API) を用いた商品検索 API
+// 2. Dialogflow CX Webhook (search.products / add.to.cart)
 //
 // デプロイ例 (Cloud Run):
 //   cd webhook
 //   gcloud run deploy harvest-agent-webhook \
 //     --source . --region asia-northeast1 --allow-unauthenticated
-//
-// 環境変数:
-//   SITE_BASE_URL : 商品詳細リンクのベースURL (例: https://your-site.run.app)
-//                   未設定の場合は相対パスを使用します。
 
 const functions = require('@google-cloud/functions-framework');
 const admin = require('firebase-admin');
+const { SearchServiceClient } = require('@google-cloud/retail').v2;
 
 admin.initializeApp();
 const db = admin.firestore();
+const searchClient = new SearchServiceClient();
+
+// Vertex AI Search for Commerce Configuration
+const RETAIL_PROJECT_ID = process.env.RETAIL_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'yamazakitlab';
+const RETAIL_LOCATION = process.env.RETAIL_LOCATION || 'global';
+const RETAIL_CATALOG = process.env.RETAIL_CATALOG || 'default_catalog';
+const RETAIL_SERVING_CONFIG = process.env.RETAIL_SERVING_CONFIG || 'default_search';
+const PLACEMENT = `projects/${RETAIL_PROJECT_ID}/locations/${RETAIL_LOCATION}/catalogs/${RETAIL_CATALOG}/servingConfigs/${RETAIL_SERVING_CONFIG}`;
 
 const SITE_BASE_URL = (process.env.SITE_BASE_URL || '').replace(/\/$/, '');
 const MAX_RESULTS = 5;
@@ -55,14 +60,42 @@ async function getProducts() {
   return productCache;
 }
 
-function searchProducts(products, rawQuery) {
+// Vertex AI Search for Commerce (Retail API) への検索クエリ
+async function searchWithRetail(query, visitorId = 'anonymous-visitor') {
+  if (!query || !String(query).trim()) return [];
+  try {
+    console.log(`[Vertex AI Search for Commerce] Querying Retail API: placement="${PLACEMENT}", query="${query}", visitorId="${visitorId}"`);
+    const request = {
+      placement: PLACEMENT,
+      query: String(query).trim(),
+      visitorId: visitorId,
+      pageSize: 50
+    };
+    const [response] = await searchClient.search(request, { autoPaginate: false });
+    const results = response || [];
+    const ids = results.map(r => {
+      if (r.id) return String(r.id);
+      if (r.product?.id) return String(r.product.id);
+      if (r.product?.name) return r.product.name.split('/').pop();
+      return null;
+    }).filter(Boolean);
+    console.log(`[Vertex AI Search for Commerce] Successfully retrieved ${ids.length} products:`, ids);
+    return ids;
+  } catch (err) {
+    console.error('[Vertex AI Search for Commerce] Retail Search API error:', err.message, err.stack);
+    return null;
+  }
+}
+
+// フォールバック用のキーワード検索
+function fallbackSearch(products, rawQuery) {
   const query = String(rawQuery || '').trim().toLowerCase();
   if (!query) return [];
 
   const categoryKey = Object.entries(CATEGORY_KEYWORDS)
     .find(([ja]) => query.includes(ja.toLowerCase()))?.[1];
 
-  const scored = products
+  return products
     .map((p) => {
       let score = 0;
       const name = (p.name || '').toLowerCase();
@@ -76,16 +109,34 @@ function searchProducts(products, rawQuery) {
       if (desc.includes(query)) score += 3;
       if (origin.includes(query)) score += 2;
 
-      // クエリを1文字ずつではなく、空白区切りトークンでも照合
       for (const token of query.split(/[\s、,]+/).filter(Boolean)) {
         if (token !== query && name.includes(token)) score += 4;
       }
       return { product: p, score };
     })
     .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score || (b.product.rating || 0) - (a.product.rating || 0));
+    .sort((a, b) => b.score - a.score || (b.product.rating || 0) - (a.product.rating || 0))
+    .map((s) => s.product);
+}
 
-  return scored.slice(0, MAX_RESULTS).map((s) => s.product);
+// AI Commerce Search を優先した商品検索
+async function searchProducts(products, rawQuery) {
+  const query = String(rawQuery || '').trim();
+  if (!query) return [];
+
+  const retailIds = await searchWithRetail(query);
+  if (retailIds && retailIds.length > 0) {
+    const idMap = new Map(products.map(p => [String(p.id), p]));
+    const matched = [];
+    for (const id of retailIds) {
+      if (idMap.has(id)) {
+        matched.push(idMap.get(id));
+      }
+    }
+    if (matched.length > 0) return matched;
+  }
+
+  return fallbackSearch(products, query);
 }
 
 // 商品1件 → richContent カード (画像 + 情報 + カート追加ボタン)
@@ -134,6 +185,61 @@ function respond(res, messages, sessionParams) {
 }
 
 functions.http('harvestAgentWebhook', async (req, res) => {
+  // CORS 設定
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send('');
+  }
+
+  // 1. フロントエンドからの AI Commerce Search (Retail Search) API リクエスト
+  if (req.path === '/api/search' || req.query.q !== undefined || (req.body && req.body.query && !req.body.fulfillmentInfo)) {
+    try {
+      const query = req.query.q || req.body?.query || '';
+      const visitorId = req.query.visitorId || req.body?.visitorId || 'web-visitor';
+      const allProducts = await getProducts();
+      
+      if (!String(query).trim()) {
+        return res.json({
+          success: true,
+          query: '',
+          engine: 'none',
+          productIds: allProducts.map(p => p.id),
+          products: allProducts,
+          totalSize: allProducts.length
+        });
+      }
+
+      const retailIds = await searchWithRetail(query, visitorId);
+      let results = [];
+      let engine = 'vertex_ai_search_for_commerce';
+
+      if (retailIds && retailIds.length > 0) {
+        const idMap = new Map(allProducts.map(p => [String(p.id), p]));
+        results = retailIds.map(id => idMap.get(id)).filter(Boolean);
+      } else {
+        results = fallbackSearch(allProducts, query);
+        engine = 'local_fallback';
+      }
+
+      return res.json({
+        success: true,
+        engine,
+        placement: PLACEMENT,
+        query,
+        productIds: results.map(p => p.id),
+        products: results,
+        totalSize: results.length
+      });
+    } catch (err) {
+      console.error('Search API error:', err);
+      return res.status(500).json({ error: 'Search failed', details: err.message });
+    }
+  }
+
+  // 2. Dialogflow CX Webhook リクエスト
   try {
     const tag = req.body?.fulfillmentInfo?.tag || '';
     const params = req.body?.sessionInfo?.parameters || {};
@@ -142,7 +248,7 @@ functions.http('harvestAgentWebhook', async (req, res) => {
 
     if (tag === 'search') {
       const query = params.query || userText;
-      const results = searchProducts(products, query);
+      const results = (await searchProducts(products, query)).slice(0, MAX_RESULTS);
 
       if (results.length === 0) {
         return respond(res, [
@@ -160,7 +266,7 @@ functions.http('harvestAgentWebhook', async (req, res) => {
 
     if (tag === 'add-to-cart') {
       const item = params.item || userText;
-      const matches = searchProducts(products, item);
+      const matches = await searchProducts(products, item);
       const target = matches[0];
 
       if (!target) {
