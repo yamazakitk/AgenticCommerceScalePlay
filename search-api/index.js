@@ -29,9 +29,10 @@ const CATALOG_LOCATION = process.env.CATALOG_LOCATION || 'global';
 const CATALOG_ID = process.env.CATALOG_ID || 'default_catalog';
 const SERVING_CONFIG_ID = process.env.SERVING_CONFIG_ID || 'default_search';
 const BRANCH_ID = process.env.BRANCH_ID || 'default_branch';
-// カタログが 28 件と小さく、AUTO だと関連の薄い商品まで補完されるため既定は無効。
-// カタログを増やしたら AUTO にすると取りこぼしが減ります。
-const QUERY_EXPANSION = process.env.QUERY_EXPANSION === 'AUTO' ? 'AUTO' : 'DISABLED';
+// クエリ拡張を切ると Retail はタイトルの完全一致しか返さず、「野菜」「お米」
+// 「オーガニック」のような語が 0 件になる (カテゴリ名や説明文では引っかからない)。
+// AUTO + pinUnexpandedResults で、完全一致を先頭に固定したまま関連商品を補う。
+const QUERY_EXPANSION = process.env.QUERY_EXPANSION === 'DISABLED' ? 'DISABLED' : 'AUTO';
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
   .map((o) => o.trim())
@@ -185,7 +186,12 @@ functions.http('harvestSearchApi', async (req, res) => {
     visitorId: String(visitorId),
     pageSize: Math.min(Number(pageSize) || 50, MAX_PAGE_SIZE),
     offset: Number(offset) || 0,
-    queryExpansionSpec: { condition: QUERY_EXPANSION },
+    queryExpansionSpec: {
+      condition: QUERY_EXPANSION,
+      // 完全一致した商品を先頭に固定する。レスポンスの pinnedResultCount で
+      // 「どこまでが完全一致か」が分かるので、フロントで区別して見せられる。
+      pinUnexpandedResults: true
+    },
     // 表記ゆれ・打ち間違いを吸収する
     spellCorrectionSpec: { mode: 'AUTO' }
   };
@@ -193,11 +199,15 @@ functions.http('harvestSearchApi', async (req, res) => {
 
   try {
     const data = await callRetailSearch(requestBody);
+    const expansion = data.queryExpansionInfo || {};
     return res.json({
       ids: (data.results || []).map((r) => r.id),
       totalSize: data.totalSize || 0,
       attributionToken: data.attributionToken || '',
       correctedQuery: data.correctedQuery || '',
+      // 先頭 pinnedResultCount 件が完全一致。それ以降はクエリ拡張による関連商品。
+      expanded: !!expansion.expandedQuery,
+      pinnedResultCount: Number(expansion.pinnedResultCount) || 0,
       query: trimmedQuery
     });
   } catch (err) {

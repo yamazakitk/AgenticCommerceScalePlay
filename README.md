@@ -117,7 +117,7 @@ Cloud Run のサービスアカウントには **`roles/retail.viewer`** を付�
 | `SERVING_CONFIG_ID` | `default_search` | サービング構成ID |
 | `BRANCH_ID` | `default_branch` | 検索対象ブランチ |
 | `ALLOWED_ORIGINS` | `*` | CORS 許可オリジン（カンマ区切り） |
-| `QUERY_EXPANSION` | `DISABLED` | `AUTO` にすると結果不足時に関連商品で補完 |
+| `QUERY_EXPANSION` | `AUTO` | 結果不足時に関連商品で補完。`DISABLED` にすると完全一致のみ |
 
 デプロイした URL をブラウザで開く（GET）と、Retail API への疎通と現在の設定を確認できます。
 検索本体は POST のみを受け付けます。
@@ -148,9 +148,17 @@ window.COMMERCE_SEARCH_API_URL = "https://harvest-search-api-xxxx.a.run.app";
     "https://retail.googleapis.com/v2/projects/<番号>/locations/global/catalogs/default_catalog/branches/0/products/<ID>?updateMask=languageCode" \
     -d '{"languageCode":"ja"}'
   ```
-- **検索対象フィールド** — Console の **Controls / Attributes** で `description` や `attributes.origin` を
-  searchable に設定すると、商品名以外でもヒットするようになります。
-- **同義語** — 「牛肉」で「黒毛和牛」を出したい場合などは、Console の **Controls** で同義語ルールを追加します。
+- **ヒット件数が極端に少ない / 0 件になる** — `QUERY_EXPANSION` が `DISABLED` になっていないか確認します。
+  Retail はクエリ拡張なしだと実質タイトルの一致しか返さないため、`title` に含まれない語
+  （「野菜」「お米」「オーガニック」など）はカテゴリ名や説明文に書かれていても 0 件になります。
+  `AUTO` + `pinUnexpandedResults` なら完全一致を先頭に固定したまま関連商品で補えます。
+  レスポンスの `pinnedResultCount` が完全一致の件数、それ以降が拡張分です。
+  ```bash
+  # 完全一致のみ / 拡張ありの比較
+  curl -sX POST "$SEARCH_API" -H 'Content-Type: application/json' \
+    -d '{"query":"野菜","visitorId":"debug"}'
+  ```
+- **同義語** — 拡張でも拾えない語（社内用語や略称など）は、Console の **Controls** で同義語ルールを追加します。
 - **ユーザーイベント** — Commerce Search のランキングは検索・閲覧・購入イベントの蓄積で改善します。
   本サンプルはイベント送信を実装していないため、初期状態のランキングで動作します。
 

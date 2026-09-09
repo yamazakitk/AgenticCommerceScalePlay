@@ -66,7 +66,10 @@ async function commerceSearch({ query = '', category = 'all', pageSize = 50 } = 
       ids: (data.ids || []).map(Number).filter((id) => !Number.isNaN(id)),
       totalSize: data.totalSize || 0,
       attributionToken: data.attributionToken || '',
-      correctedQuery: data.correctedQuery || ''
+      correctedQuery: data.correctedQuery || '',
+      // 先頭 pinnedResultCount 件が完全一致、残りはクエリ拡張で補われた関連商品
+      expanded: !!data.expanded,
+      pinnedResultCount: Number(data.pinnedResultCount) || 0
     };
   } finally {
     clearTimeout(timer);

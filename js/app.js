@@ -171,7 +171,9 @@ async function filterAndRenderProducts() {
       query: searchKeyword,
       category: activeCategory,
       ids: result.ids,
-      correctedQuery: result.correctedQuery
+      correctedQuery: result.correctedQuery,
+      expanded: result.expanded,
+      pinnedResultCount: result.pinnedResultCount
     };
     renderCatalog(resolveRankedProducts(result.ids), commerceSearchTitle(commerceSearchResult));
   } catch (e) {
@@ -182,10 +184,16 @@ async function filterAndRenderProducts() {
   }
 }
 
-function commerceSearchTitle({ query, correctedQuery }) {
-  return correctedQuery && correctedQuery !== query
-    ? `「${correctedQuery}」の検索結果（「${query}」を自動補正）`
-    : `「${query}」の検索結果`;
+// 例: 「トマト」の検索結果（「とまと」を自動補正・関連商品を含む）
+function commerceSearchTitle({ query, correctedQuery, expanded, ids }) {
+  const shown = correctedQuery && correctedQuery !== query ? correctedQuery : query;
+  const notes = [];
+  if (correctedQuery && correctedQuery !== query) notes.push(`「${query}」を自動補正`);
+  // クエリ拡張が働いた場合、完全一致以外の関連商品が混ざっていることを明示する
+  if (expanded && ids && ids.length) notes.push('関連商品を含む');
+  return notes.length
+    ? `「${shown}」の検索結果（${notes.join('・')}）`
+    : `「${shown}」の検索結果`;
 }
 
 // Sort and paint the given product list into the catalog grid
