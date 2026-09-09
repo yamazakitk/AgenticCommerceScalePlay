@@ -1,8 +1,6 @@
 // Cart Management System for Harvest & Co.
 
-// Google Cloud Vertex AI Search for Commerce (AI Commerce Search) Configuration
-// Replace this with your actual Configuration ID from the Google Cloud Console.
-window.VERTEX_AI_SEARCH_CONFIG_ID = "YOUR_VERTEX_AI_SEARCH_CONFIG_ID";
+// AI Commerce Search の接続先は js/search-config.js で設定します。
 
 // Initialize Cart state
 let cart = [];
@@ -240,28 +238,11 @@ function updateDrawerUI() {
 
 // Helper to inject Shared HTML Elements (Header, Side-Drawer, Footer)
 function injectLayout(activeTab = 'home') {
-  const configId = window.VERTEX_AI_SEARCH_CONFIG_ID || 'YOUR_VERTEX_AI_SEARCH_CONFIG_ID';
-  const isConfigured = configId && !configId.startsWith('YOUR_');
-
-  // Load Gen App Builder client script dynamically if Config ID is configured
-  if (isConfigured) {
-    if (!document.querySelector('script[src*="gen-app-builder/client"]')) {
-      const script = document.createElement('script');
-      script.src = "https://cloud.google.com/ai/gen-app-builder/client?hl=ja";
-      document.head.appendChild(script);
-    }
-    
-    // Inject gen-search-widget element
-    if (!document.getElementById('gen-search-widget-el')) {
-      const widget = document.createElement('gen-search-widget');
-      widget.id = 'gen-search-widget-el';
-      widget.setAttribute('configId', configId);
-      widget.setAttribute('triggerId', 'search-input');
-      document.body.appendChild(widget);
-    }
-  }
-
-  const searchPlaceholder = isConfigured ? "AI Commerce Search で検索..." : "新鮮な食材を検索...";
+  const commerceSearchEnabled = typeof window.isCommerceSearchEnabled === 'function' &&
+                                window.isCommerceSearchEnabled();
+  const searchPlaceholder = commerceSearchEnabled
+    ? "AI Commerce Search で検索..."
+    : "新鮮な食材を検索...";
 
   // 1. Inject Header
   const headerPlaceholder = document.getElementById('header-placeholder');
@@ -403,24 +384,17 @@ function injectLayout(activeTab = 'home') {
 }
 
 // Handle header search (redirects to home and triggers filtering if on another page)
+// カタログページでは filterAndRenderProducts() が AI Commerce Search を呼びます。
 function handleHeaderSearch(event) {
-  const configId = window.VERTEX_AI_SEARCH_CONFIG_ID || 'YOUR_VERTEX_AI_SEARCH_CONFIG_ID';
-  const isConfigured = configId && !configId.startsWith('YOUR_');
-  if (isConfigured) {
-    return; // Let Vertex AI Search widget handle the search
-  }
+  if (event.key !== 'Enter') return;
 
-  if (event.key === 'Enter') {
-    const query = event.target.value.trim();
-    if (window.location.pathname.includes('index.html') || window.location.pathname === '/' || window.location.pathname.endsWith('/AgenticCommerceScalePlay/')) {
-      // We are on index.html, trigger filter directly
-      if (typeof window.filterAndRenderProducts === 'function') {
-        window.filterAndRenderProducts();
-      }
-    } else {
-      // Redirect to index.html with query parameter
-      window.location.href = `index.html?search=${encodeURIComponent(query)}`;
-    }
+  const query = event.target.value.trim();
+  if (typeof window.filterAndRenderProducts === 'function') {
+    // We are on the catalog page, trigger search + filter directly
+    window.filterAndRenderProducts();
+  } else {
+    // Redirect to index.html with query parameter
+    window.location.href = `index.html?search=${encodeURIComponent(query)}`;
   }
 }
 

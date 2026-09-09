@@ -37,9 +37,10 @@
   - マイクロアニメーション（カートバッジのバウンス、ドロワーのスライドイン、ホバー時のカード浮き上がり等）。
 - **ロジック:** 拡張性の高い Vanilla JavaScript
   - `localStorage` によるページ間のカート状態の永続化と同期。
-  - **AI Commerce Search (Vertex AI Search for Retail) 連携:**
-    - Google Cloud の Generative Search Widget (`gen-search-widget`) を統合。
-    - 設定が有効化されると、ヘッダーの検索バーが自動的に AI Commerce Search に切り替わります。
+  - **AI Commerce Search (Vertex AI Search for Commerce) 連携:**
+    - ヘッダーの検索バーが Retail API (`servingConfigs:search`) の結果でサイトの商品グリッドを描き替えます。
+    - Retail API は OAuth2 必須でブラウザから直接呼べないため、[search-api/](search-api/) (Cloud Run) が仲介します。
+    - 接続先が未設定、または API が落ちている場合はクライアント側のキーワード検索に自動フォールバックします。
 
 ## 商品データの Firestore 登録と読み込み
 本サイトの商品カタログは **Cloud Firestore** から読み込むことができます。Firebase が未設定の場合は、[js/products.js](js/products.js) 内のローカルカタログに自動でフォールバックします。
@@ -80,15 +81,78 @@ node import-products-to-firestore.js --project YOUR_PROJECT_ID
 *(※ `apiKey` が `YOUR_` で始まるデフォルト値のままの場合、Firestore への接続は行われず、ローカルカタログで動作します)*
 
 ## AI Commerce Search の有効化と設定方法
-本サイトの検索機能を Google Cloud の AI Commerce Search (Vertex AI Search) に接続するには、以下の設定を行います。
+ヘッダーの検索バーを Google Cloud の **AI Commerce Search (Vertex AI Search for Commerce / Retail API)** に接続します。
 
-1. **Google Cloud Console** で Vertex AI Agent Builder または Search プリセットを作成し、ウィジェット統合用の **Config ID (構成ID)** を取得します。
-2. [js/cart.js](file:///usr/local/google/home/yamazakit/sources/AgenticCommerceScalePlay/js/cart.js) の先頭にある以下の変数を取得した ID に書き換えます：
-   ```javascript
-   window.VERTEX_AI_SEARCH_CONFIG_ID = "YOUR_VERTEX_AI_SEARCH_CONFIG_ID";
-   ```
-3. 設定を保存すると、検索窓のプレースホルダーが `AI Commerce Search で検索...` に切り替わり、自動的に Google Cloud の検索ウィジェットが有効になります。
-   *(※ ID が `YOUR_` で始まるデフォルト値のままであれば、自動的にローカルカタログ内の簡易検索にフォールバックします)*
+Retail API の `servingConfigs:search` は OAuth2 が必須でブラウザから直接呼べません。そのため
+[search-api/](search-api/) を Cloud Run にデプロイし、フロントはそこ経由で検索します。返ってくるのは
+ランキング順の商品IDで、商品カード自体は Firestore / ローカルカタログのデータで描画します。
+
+```
+ヘッダー検索 → js/commerce-search.js → search-api (Cloud Run) → retail.googleapis.com
+                                                                   ↓ ランキング順の商品ID
+                              js/app.js が window.products から引いて商品グリッドを描画
+```
+
+### 1. カタログに商品を取り込む
+Google Cloud Console の **AI Commerce Search → Data** から [products.jsonl](products.jsonl) を
+`default_catalog` の `default_branch` にインポートします。取り込み後、Console の Data ページで
+**件数が 28 件になっていること**を必ず確認してください（一部だけ取り込まれると、その商品は検索に出てきません）。
+
+### 2. 検索APIをデプロイする
+```bash
+cd search-api
+gcloud run deploy harvest-search-api \
+  --source . --region asia-northeast1 --allow-unauthenticated \
+  --set-env-vars PROJECT_NUMBER=<プロジェクト番号>,ALLOWED_ORIGINS=https://<サイトのURL>
+```
+`PROJECT_NUMBER` は**プロジェクトIDではなくプロジェクト番号**です（`gcloud projects describe <PROJECT_ID> --format='value(projectNumber)'`）。
+Cloud Run のサービスアカウントには **`roles/retail.viewer`** を付与してください。
+
+その他の環境変数（すべて任意）:
+
+| 変数 | 既定値 | 用途 |
+|---|---|---|
+| `CATALOG_LOCATION` | `global` | カタログのロケーション |
+| `CATALOG_ID` | `default_catalog` | カタログID |
+| `SERVING_CONFIG_ID` | `default_search` | サービング構成ID |
+| `BRANCH_ID` | `default_branch` | 検索対象ブランチ |
+| `ALLOWED_ORIGINS` | `*` | CORS 許可オリジン（カンマ区切り） |
+| `QUERY_EXPANSION` | `DISABLED` | `AUTO` にすると結果不足時に関連商品で補完 |
+
+デプロイした URL をブラウザで開く（GET）と、Retail API への疎通と現在の設定を確認できます。
+検索本体は POST のみを受け付けます。
+```json
+{ "status": "ok", "detail": "Retail API に接続できました (テストクエリ「トマト」で 1 件)。", "config": { ... } }
+```
+
+### 3. サイト側に接続先を設定する
+[js/search-config.js](js/search-config.js) に、デプロイで得られた Cloud Run の URL を設定します。
+```javascript
+window.COMMERCE_SEARCH_API_URL = "https://harvest-search-api-xxxx.a.run.app";
+```
+設定すると検索窓のプレースホルダーが `AI Commerce Search で検索...` に切り替わります。
+
+*(※ `YOUR_` で始まるデフォルト値のまま、または API がエラーを返した場合は、ローカルカタログ内の
+簡易キーワード検索に自動フォールバックします。ブラウザのコンソールに理由が出力されます)*
+
+### 検索がヒットしないときは
+検索結果は Retail 側のインデックス品質に依存します。ヒットしない語がある場合:
+
+- **カタログの取り込み漏れ** — Console の Data ページで件数を確認します。
+- **`languageCode` が未設定** — 商品に `languageCode: "ja"` が無いと日本語のトークナイズが効かず、
+  商品名の一部（例: 「黒毛和牛A5ランクサーロインステーキ」の「和牛」）でヒットしなくなります。
+  Console からのインポートでは自動で付きますが、Retail API で個別に商品を作成した場合は明示指定が必要です。
+  ```bash
+  curl -X PATCH -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+    -H "Content-Type: application/json" \
+    "https://retail.googleapis.com/v2/projects/<番号>/locations/global/catalogs/default_catalog/branches/0/products/<ID>?updateMask=languageCode" \
+    -d '{"languageCode":"ja"}'
+  ```
+- **検索対象フィールド** — Console の **Controls / Attributes** で `description` や `attributes.origin` を
+  searchable に設定すると、商品名以外でもヒットするようになります。
+- **同義語** — 「牛肉」で「黒毛和牛」を出したい場合などは、Console の **Controls** で同義語ルールを追加します。
+- **ユーザーイベント** — Commerce Search のランキングは検索・閲覧・購入イベントの蓄積で改善します。
+  本サンプルはイベント送信を実装していないため、初期状態のランキングで動作します。
 
 ## CX Agent Studio エージェント (Agentic Commerce) の埋め込み
 CX Agent Studio (Conversational Agents / Dialogflow CX) で構築したエージェントを、トップページに **Dialogflow Messenger** ウィジェット(右下のチャットバブル)として表示できます。

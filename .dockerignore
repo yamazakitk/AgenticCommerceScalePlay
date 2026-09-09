@@ -2,6 +2,7 @@
 .gitignore
 .gemini
 Dockerfile
+search-api/
 *.js
 
 *.py

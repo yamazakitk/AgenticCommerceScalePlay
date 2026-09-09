@@ -5,6 +5,12 @@ let activeCategory = 'all';
 let searchKeyword = '';
 let currentSort = 'default';
 
+// AI Commerce Search の直近の結果。同じ (query, category) の再描画では再検索しない。
+// { query, category, ids: number[], correctedQuery } の形。
+let commerceSearchResult = null;
+// 入力が速いと古いレスポンスが後着することがあるため、最新のリクエストだけ反映する
+let commerceSearchSeq = 0;
+
 document.addEventListener('DOMContentLoaded', async () => {
   // 1. Inject shared layouts (header, cart drawer, footer)
   if (typeof window.injectLayout === 'function') {
@@ -76,47 +82,123 @@ function handleSortChange() {
   }
 }
 
-// Main filter & sort calculation and DOM rendering
-function filterAndRenderProducts() {
-  const productGrid = document.getElementById('product-grid');
-  const noResults = document.getElementById('no-results');
-  const catalogTitle = document.getElementById('catalog-title');
+// Keep the ?search= parameter in sync so results stay shareable / reloadable
+function syncSearchParamToUrl() {
+  const url = new URL(window.location);
+  if (searchKeyword) {
+    if (url.searchParams.get('search') === searchKeyword) return;
+    url.searchParams.set('search', searchKeyword);
+  } else {
+    if (!url.searchParams.has('search')) return;
+    url.searchParams.delete('search');
+  }
+  window.history.replaceState({}, '', url);
+}
 
-  if (!productGrid) return;
+function setCatalogTitle(text) {
+  const catalogTitle = document.getElementById('catalog-title');
+  if (catalogTitle) catalogTitle.textContent = text;
+}
+
+function categoryTitle() {
+  if (activeCategory === 'all') return 'おすすめの商品';
+  const activePill = document.querySelector(`.category-pill[data-category="${activeCategory}"]`);
+  return activePill ? `${activePill.textContent}の一覧` : '商品一覧';
+}
+
+// Client-side fallback used when Commerce Search is unconfigured or unreachable
+function applyLocalFilter() {
+  const keyword = searchKeyword.toLowerCase();
+  return window.products.filter(product => {
+    const matchesCategory = activeCategory === 'all' || product.category === activeCategory;
+    const matchesSearch = !keyword ||
+      product.name.toLowerCase().includes(keyword) ||
+      product.description.toLowerCase().includes(keyword) ||
+      product.origin.toLowerCase().includes(keyword) ||
+      product.categoryName.toLowerCase().includes(keyword);
+    return matchesCategory && matchesSearch;
+  });
+}
+
+// Map Commerce Search's ranked IDs back onto the local catalog, preserving rank order.
+// カタログと Firestore の同期ズレで見つからないIDは黙って除外する。
+function resolveRankedProducts(ids) {
+  const byId = new Map(window.products.map(p => [p.id, p]));
+  return ids.map(id => byId.get(id)).filter(Boolean);
+}
+
+// Main search / filter / sort orchestration
+async function filterAndRenderProducts() {
+  if (!document.getElementById('product-grid')) return;
 
   // Retrieve Search Input from Header
   const searchBarInput = document.getElementById('search-input');
   if (searchBarInput) {
-    searchKeyword = searchBarInput.value.trim().toLowerCase();
+    searchKeyword = searchBarInput.value.trim();
+  }
+  syncSearchParamToUrl();
+
+  const useCommerceSearch = !!searchKeyword &&
+    typeof window.isCommerceSearchEnabled === 'function' &&
+    window.isCommerceSearchEnabled();
+
+  if (!useCommerceSearch) {
+    commerceSearchResult = null;
+    commerceSearchSeq++; // 実行中の検索結果が後から上書きしないようにする
+    renderCatalog(applyLocalFilter(), searchKeyword ? `「${searchKeyword}」の検索結果` : categoryTitle());
+    return;
   }
 
-  // Set catalog visual title
-  let titleText = 'おすすめの商品';
-  if (activeCategory !== 'all') {
-    const activePill = document.querySelector(`.category-pill[data-category="${activeCategory}"]`);
-    titleText = activePill ? `${activePill.textContent}の一覧` : '商品一覧';
-  }
-  if (searchKeyword) {
-    titleText = `「${searchKeyword}」の検索結果`;
-  }
-  if (catalogTitle) {
-    catalogTitle.textContent = titleText;
+  // 同じ条件なら再検索せず、キャッシュ済みのランキングを描画し直す
+  const cached = commerceSearchResult;
+  if (cached && cached.query === searchKeyword && cached.category === activeCategory) {
+    renderCatalog(resolveRankedProducts(cached.ids), commerceSearchTitle(cached));
+    return;
   }
 
-  // 1. Filter products
-  let filtered = window.products.filter(product => {
-    // Category filter
-    const matchesCategory = activeCategory === 'all' || product.category === activeCategory;
-    
-    // Search keyword filter
-    const matchesSearch = !searchKeyword || 
-      product.name.toLowerCase().includes(searchKeyword) ||
-      product.description.toLowerCase().includes(searchKeyword) ||
-      product.origin.toLowerCase().includes(searchKeyword) ||
-      product.categoryName.toLowerCase().includes(searchKeyword);
+  const seq = ++commerceSearchSeq;
+  setCatalogTitle(`「${searchKeyword}」を検索中…`);
 
-    return matchesCategory && matchesSearch;
-  });
+  try {
+    const result = await window.commerceSearch({
+      query: searchKeyword,
+      category: activeCategory,
+      pageSize: 100
+    });
+    if (seq !== commerceSearchSeq) return; // 新しい検索が始まっているので破棄
+
+    commerceSearchResult = {
+      query: searchKeyword,
+      category: activeCategory,
+      ids: result.ids,
+      correctedQuery: result.correctedQuery
+    };
+    renderCatalog(resolveRankedProducts(result.ids), commerceSearchTitle(commerceSearchResult));
+  } catch (e) {
+    if (seq !== commerceSearchSeq) return;
+    console.error('[Harvest & Co.] AI Commerce Search の呼び出しに失敗しました。クライアント側検索にフォールバックします。', e);
+    commerceSearchResult = null;
+    renderCatalog(applyLocalFilter(), `「${searchKeyword}」の検索結果`);
+  }
+}
+
+function commerceSearchTitle({ query, correctedQuery }) {
+  return correctedQuery && correctedQuery !== query
+    ? `「${correctedQuery}」の検索結果（「${query}」を自動補正）`
+    : `「${query}」の検索結果`;
+}
+
+// Sort and paint the given product list into the catalog grid
+function renderCatalog(products, titleText) {
+  const productGrid = document.getElementById('product-grid');
+  const noResults = document.getElementById('no-results');
+
+  if (!productGrid) return;
+
+  setCatalogTitle(titleText);
+
+  // Commerce Search の関連度順を保つため、"おすすめ順" では並べ替えない
+  let filtered = products.slice();
 
   // 2. Sort products
   if (currentSort === 'price-asc') {
@@ -226,12 +308,8 @@ function resetSearch() {
     searchBarInput.value = '';
   }
   searchKeyword = '';
-  
-  // Clear search parameter from URL
-  const url = new URL(window.location);
-  url.searchParams.delete('search');
-  window.history.pushState({}, '', url);
 
+  // filterAndRenderProducts() が ?search= の除去まで行う
   filterAndRenderProducts();
 }
 
