@@ -437,14 +437,19 @@ window.AGENT_STUDIO_CONFIG = {
   // CES はウィジェットをテキスト中の [widget:...] 記法で返すこともあれば、
   // 構造化された payload (type: product_detail_carousel など) で返すこともある。
   // どちらで来ても同じカードになるよう、payload 側もここで拾う。
+  // product_list / compare_products は productDetails の配列、
+  // product-detail は商品1件がそのまま payload 直下に入る (type: base_product_detail)。
+  function isWidgetData(value) {
+    if (!value || typeof value !== "object") return false;
+    return Array.isArray(value.productDetails) || Boolean(value.productId && value.title);
+  }
+
   function payloadWidget(payload) {
     if (!payload || typeof payload !== "object") return null;
-    if (Array.isArray(payload.productDetails)) return { name: payload.type || "payload", data: payload };
+    if (isWidgetData(payload)) return { name: payload.type || "payload", data: payload };
     // 一段ネストされて届くことがあるので、直下だけ探す
     for (const value of Object.values(payload)) {
-      if (value && typeof value === "object" && Array.isArray(value.productDetails)) {
-        return { name: payload.type || "payload", data: value };
-      }
+      if (isWidgetData(value)) return { name: payload.type || "payload", data: value };
     }
     return null;
   }
