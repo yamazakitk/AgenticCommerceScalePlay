@@ -8,6 +8,21 @@ server {
         try_files $uri $uri/ =404;
     }
 
+    # HTML / JS / CSS はファイル名にハッシュを持たないため、キャッシュされると
+    # デプロイしても古いコードが使われ続ける (ETag による再検証は走らない)。
+    # no-cache = 「キャッシュはしてよいが毎回サーバーに確認する」。
+    # 更新が無ければ 304 が返るので転送量はほぼ増えない。
+    location ~* \.(html|js|css)$ {
+        root /usr/share/nginx/html;
+        add_header Cache-Control "no-cache";
+    }
+
+    # 画像などの静的アセットは差し替え頻度が低いので通常どおりキャッシュさせる
+    location ~* \.(png|jpg|jpeg|gif|svg|webp|ico|woff2?)$ {
+        root /usr/share/nginx/html;
+        add_header Cache-Control "public, max-age=86400";
+    }
+
     # Custom error page if needed
     error_page 404 /404.html;
     location = /404.html {
