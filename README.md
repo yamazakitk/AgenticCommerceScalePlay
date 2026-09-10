@@ -325,6 +325,10 @@ curl -X PATCH -H "Authorization: Bearer $(gcloud auth print-access-token)" \
   -d '{"mcpToolset":{"serverAddress":"https://harvest-commerce-mcp-PROJECT_NUMBER.us-central1.run.app/mcp"}}'
 ```
 
+### 4. エージェントの指示を新しいツールに合わせる
+
+MCP サーバーを差し替えると**ツール名とレスポンス形式が変わる**ため、`Search-Agent` の指示もそろえる必要があります。コンソールに投入している内容は [agent/ces-search-agent-instruction.txt](agent/ces-search-agent-instruction.txt) に置いてあります。あわせて、そのエージェントが使うツール (`toolIds`) を `search_products` / `get_product_details` に設定します。
+
 差し替え後は前述のとおり**バージョン作成 → デプロイメント切り替え**を行わないと、公開ウィジェットには反映されません。
 
 ### ローカルでの動作確認
