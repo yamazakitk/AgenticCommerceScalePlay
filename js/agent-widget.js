@@ -244,6 +244,27 @@ window.AGENT_STUDIO_CONFIG = {
     .harvest-agent-msg a { color: inherit; text-decoration: underline; }
     .harvest-agent-msg.agent a { color: var(--primary-color, #1A3A2B); }
 
+    .harvest-agent-msg.has-widget { max-width: 100%; align-self: stretch; }
+    .harvest-agent-cards {
+      display: flex; flex-direction: column; gap: var(--space-sm, 8px);
+      margin-top: var(--space-sm, 8px);
+    }
+    .harvest-agent-cards:first-child { margin-top: 0; }
+    .harvest-agent-card {
+      display: flex; gap: 12px; align-items: center; padding: 8px;
+      border: 1px solid var(--border-color, #EAEAE3); border-radius: var(--radius-md, 8px);
+      background: var(--bg-page, #FAFAF7); color: inherit; text-decoration: none;
+    }
+    a.harvest-agent-card:hover { border-color: var(--accent-color, #D4A373); }
+    .harvest-agent-card img {
+      flex: 0 0 auto; width: 56px; height: 56px; object-fit: contain;
+      border-radius: var(--radius-sm, 4px); background: var(--bg-input, #F3F3ED);
+    }
+    .harvest-agent-card-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .harvest-agent-card-title { font-size: 0.8125rem; font-weight: 500; line-height: 1.35; }
+    .harvest-agent-card-sub { font-size: 0.75rem; color: var(--text-secondary, #5C625E); }
+    .harvest-agent-card-price { font-size: 0.8125rem; font-weight: 600; color: var(--primary-color, #1A3A2B); }
+
     .harvest-agent-status {
       align-self: flex-start; font-size: 0.75rem;
       color: var(--text-secondary, #5C625E); font-style: italic;
@@ -297,10 +318,136 @@ window.AGENT_STUDIO_CONFIG = {
       .replace(/^[ \t]*[*-][ \t]+/gm, "・");
   }
 
-  function appendMessage(role, text) {
+  // ==========================================================================
+  // ウィジェット記法
+  // ==========================================================================
+  // CES のエージェントは商品カルーセルなどを、本文テキストの中に
+  //   [widget:product_list]
+  //   { "productDetails": [ ... ] }
+  // という記法で埋め込んで返してくる (CES 公式ウィジェットが描画する前提)。
+  // そのまま出すと生 JSON が見えてしまうので、切り出してカードとして描く。
+
+  const WIDGET_MARKER = /\[widget:([A-Za-z0-9_-]+)\]\s*/;
+
+  // text[from] から始まる JSON オブジェクトの終端を返す (文字列リテラルを考慮)
+  function findJsonEnd(text, from) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = from; i < text.length; i++) {
+      const ch = text[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}" && --depth === 0) return i + 1;
+    }
+    return -1; // ストリーミング途中で未完成
+  }
+
+  function splitWidgets(text) {
+    const widgets = [];
+    let body = "";
+    let rest = String(text);
+
+    for (;;) {
+      const match = WIDGET_MARKER.exec(rest);
+      if (!match) { body += rest; break; }
+      body += rest.slice(0, match.index);
+
+      const jsonStart = match.index + match[0].length;
+      // 記法の直後が JSON でなければ、マーカーだけ落として本文として続ける
+      if (rest[jsonStart] !== "{") { rest = rest.slice(jsonStart); continue; }
+
+      const jsonEnd = findJsonEnd(rest, jsonStart);
+      // 未完成 (受信途中) なら、その手前までを本文として扱い残りは捨てる
+      if (jsonEnd < 0) break;
+
+      try {
+        widgets.push({ name: match[1], data: JSON.parse(rest.slice(jsonStart, jsonEnd)) });
+      } catch (_) { /* 壊れた JSON は無視 */ }
+      rest = rest.slice(jsonEnd);
+    }
+    return { body: body.trim(), widgets };
+  }
+
+  function formatPrice(value) {
+    const num = Number(value);
+    if (!isFinite(num) || !num) return "";
+    return `¥${Math.round(num).toLocaleString("ja-JP")}`;
+  }
+
+  // エージェントのカタログとサイトのカタログは別物なので、商品IDが
+  // このサイトに存在するときだけ商品ページへリンクする。
+  function siteProductUrl(productId) {
+    const id = Number(productId);
+    if (!id || !Array.isArray(window.products)) return "";
+    return window.products.some((p) => Number(p.id) === id) ? `product.html?id=${id}` : "";
+  }
+
+  // MCP サーバーは絶対URLの uri を返してくる。エージェントの出力をそのまま
+  // リンクにすると外部サイトへ誘導されうるので、同一オリジンのものだけ通す。
+  function sameOriginUrl(uri) {
+    if (typeof uri !== "string" || !/^https?:/i.test(uri)) return "";
+    try {
+      const url = new URL(uri, location.href);
+      return url.origin === location.origin ? url.pathname.replace(/^\//, "") + url.search : "";
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function buildCard(item) {
+    const href = siteProductUrl(item.productId) || sameOriginUrl(item.uri);
+    const card = document.createElement(href ? "a" : "div");
+    card.className = "harvest-agent-card";
+    if (href) card.href = href;
+
+    const image = Array.isArray(item.imageUris) ? item.imageUris.find((u) => /^https?:/.test(u)) : "";
+    const price = formatPrice(item.price);
+    card.innerHTML = `
+      ${image ? `<img src="${escapeHtml(image)}" alt="" loading="lazy">` : ""}
+      <div class="harvest-agent-card-body">
+        <span class="harvest-agent-card-title">${escapeHtml(item.title || "")}</span>
+        ${item.subtitle ? `<span class="harvest-agent-card-sub">${escapeHtml(item.subtitle)}</span>` : ""}
+        ${price ? `<span class="harvest-agent-card-price">${price}</span>` : ""}
+      </div>`;
+    return card;
+  }
+
+  function renderWidget(widget) {
+    // product_list は productDetails の配列、product-detail は単体。
+    // compare_products など未対応のものは黙って捨てる (生 JSON を出すよりまし)。
+    const data = widget.data || {};
+    const items = Array.isArray(data.productDetails) ? data.productDetails
+      : data.title ? [data]
+      : [];
+    if (!items.length) return null;
+
+    const wrap = document.createElement("div");
+    wrap.className = "harvest-agent-cards";
+    items.forEach((item) => wrap.appendChild(buildCard(item)));
+    return wrap;
+  }
+
+  // streaming = true のときはウィジェットを描かない (JSON がまだ完成していない)
+  function setMessageContent(el, text, streaming) {
+    const { body, widgets } = splitWidgets(text);
+    el.innerHTML = renderMarkdown(body);
+    if (streaming) return;
+    const cards = widgets.map(renderWidget).filter(Boolean);
+    cards.forEach((c) => el.appendChild(c));
+    el.classList.toggle("has-widget", cards.length > 0);
+  }
+
+  function appendMessage(role, text, streaming) {
     const el = document.createElement("div");
     el.className = `harvest-agent-msg ${role}`;
-    el.innerHTML = renderMarkdown(text);
+    setMessageContent(el, text, streaming);
     log.insertBefore(el, statusEl);
     scrollToBottom();
     return el;
@@ -377,8 +524,8 @@ window.AGENT_STUDIO_CONFIG = {
           if (out.text) {
             setStatus("");
             answer += out.text;
-            if (!bubble) bubble = appendMessage("agent", answer);
-            else { bubble.innerHTML = renderMarkdown(answer); scrollToBottom(); }
+            if (!bubble) bubble = appendMessage("agent", answer, true);
+            else { setMessageContent(bubble, answer, true); scrollToBottom(); }
           }
           // エージェントからのカート操作指示
           if (out.payload) {
@@ -386,8 +533,14 @@ window.AGENT_STUDIO_CONFIG = {
           }
         }
       });
-      if (answer) recordHistory("agent", answer);
-      else appendMessage("agent", "うまく応答できませんでした。もう一度お試しください。");
+      if (answer) {
+        // 受信完了後に描き直して、ウィジェット記法をカードに置き換える
+        setMessageContent(bubble, answer, false);
+        scrollToBottom();
+        recordHistory("agent", answer);
+      } else {
+        appendMessage("agent", "うまく応答できませんでした。もう一度お試しください。");
+      }
     } catch (error) {
       console.error("[Harvest & Co.] エージェント呼び出しに失敗しました", error);
       appendMessage("error", `エージェントに接続できませんでした。${error.message || ""}`);

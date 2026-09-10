@@ -226,7 +226,23 @@ window.AGENT_STUDIO_CONFIG = {
 ### つながらないときは
 - **`Public access is not enabled for the deployment ...`** — 手順1の `enablePublicAccess` が `true` になっていません。`API` チャネルのデプロイメントでは公開アクセスを使えないため、`WEB_UI` のデプロイメントを別途作成してください。
 - **`Origin ... is not allowed for the deployment ...`** — `allowedOrigins` にサイトのオリジンが入っていません。独自ドメインを追加したときやプレビュー URL から開いたときに出ます。デプロイメントを `PATCH` して追加します。
-- **エージェントの応答言語** — 応答言語や口調は CX Agent Studio 側のエージェント指示 (instruction) で決まります。日本語で返させたい場合はコンソールでエージェントの指示を修正してください。ウィジェット側では制御していません。
+- **エージェントの応答言語** — 応答言語はアプリの `languageSettings.defaultLanguageCode` で決まります (指示が日本語でも、ここが `en-US` だと英語で返ります)。ウィジェット側では制御していません。
+- **コンソールで直したのに反映されない** — デプロイメントは**イミュータブルなバージョン (`AppVersion`) を指している**ため、コンソールの編集はドラフトに入るだけで反映されません。編集のたびに以下の 2 手順が必要です。
+
+  ```bash
+  APP=projects/yamazakitlab/locations/us/apps/APP_ID
+  # 1. ドラフトからバージョンを作る (レスポンスの name を控える)
+  curl -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+    -H 'Content-Type: application/json' \
+    "https://ces.googleapis.com/v1beta/$APP/versions" -d '{"displayName":"vN"}'
+  # 2. デプロイメントを新バージョンに向ける
+  curl -X PATCH -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+    -H 'Content-Type: application/json' \
+    "https://ces.googleapis.com/v1beta/$APP/deployments/web-widget?updateMask=appVersion" \
+    -d '{"appVersion":"'"$APP"'/versions/NEW_VERSION_ID"}'
+  ```
+
+  ※ドキュメントにある `versions/-` (ドラフトを直接指す指定) は `PATCH` のバリデーションで弾かれます。
 
 ### エージェント定義のインポート (agent/harvest-commerce-agent.zip)
 [agent/harvest-commerce-agent.zip](agent/harvest-commerce-agent.zip) は、CX Agent Studio (Conversational Agents / Dialogflow CX) に**リストア(インポート)可能なエージェント定義**です。以下の機能を含みます:
@@ -251,6 +267,79 @@ window.AGENT_STUDIO_CONFIG = {
 5. 動作確認はコンソールのシミュレータで行えます。**この zip は Dialogflow CX 形式で、本サイトのウィジェット (CES API) からは呼び出せません。** サイトに載せる場合は CX Agent Studio 側でアプリとして作り直し、前述の手順でデプロイメントを作成してください。
 
 **カート連携の仕組み:** カートはブラウザの `localStorage` で管理されているため、エージェントは構造化ペイロード (`{ command: "add_to_cart", productId }`) や応答テキスト中のリンク (`#add-to-cart-<id>`) を返し、サイト側の [js/agent-widget.js](js/agent-widget.js) がそれを検出して `addToCart()` を実行します。エージェント単体(コンソールのシミュレータ)でもテキスト応答は確認できますが、実際のカート追加は本サイト上のウィジェット経由でのみ動作します。
+
+## エージェント用 MCP サーバー (mcp-server/)
+
+エージェントが「このサイトの商品」を答えられるよう、AI Commerce Search (Retail API) を **MCP (Model Context Protocol)** のツールとして公開する Cloud Run サービスです。CX Agent Studio のツールセットからこのサーバーを参照します。
+
+```
+CES エージェント ──MCP (streamable HTTP + ID トークン)──> mcp-server ──> Retail API
+```
+
+公開ツールは 2 つです。
+
+| ツール | 用途 |
+| --- | --- |
+| `search_products(query, page_size, category)` | 自然文で商品を検索。`productId` / `title` / `subtitle` / `price` / `imageUris` / `uri` を JSON で返すので、そのまま `product_list` ウィジェットに渡せます |
+| `get_product_details(product_id)` | 商品 1 件の詳細 (価格・在庫・評価・産地などの属性) |
+
+実装上のポイント:
+
+- **検索結果から商品情報を組み立て直しています。** カタログの `attributesConfig` が全項目 `RETRIEVABLE_DISABLED` のため、`servingConfigs:search` は商品 ID しか返しません。ヒットした ID に対して `products.get` を並列に投げてタイトル・画像・価格を補完しています。カタログ設定側で `retrievableOption` を有効化すれば、この追加取得は不要にできます。
+- **クエリ拡張は `AUTO` + `pinUnexpandedResults`** で、サイト検索 ([search-api](search-api/)) と同じ挙動にそろえています。完全一致を先頭に固定したうえで関連商品を補うため、各商品に `exactMatch` を付けて返します。
+- **商品ページ URL はサーバー側で組み立てます。** カタログの商品に `uri` が無いため、`SITE_BASE_URL` から `.../product.html?id=<商品ID>` を生成します。
+- **CES 互換のためのモンキーパッチ**を入れています (Accept ヘッダー検証の緩和、`title`/`default` を落とした最小のツールスキーマ、`stateless_http` / `json_response`)。参考リポジトリ [shrishmarnad/VertexcommerceMCP](https://github.com/shrishmarnad/VertexcommerceMCP) と同じ対処です。
+- レコメンド (`recently_viewed`) はユーザーイベントを投入していないと常に空を返すため、ツールとしては公開していません。
+
+### 1. デプロイする
+
+```bash
+cd mcp-server
+gcloud run deploy harvest-commerce-mcp \
+  --source . --region us-central1 \
+  --no-allow-unauthenticated \
+  --service-account 800053188430-compute@developer.gserviceaccount.com \
+  --set-env-vars PROJECT_NUMBER=800053188430,SITE_BASE_URL=https://YOUR-SITE-URL
+```
+
+実行サービスアカウントには `roles/retail.viewer` が必要です。**公開してはいけません** (`--no-allow-unauthenticated`)。呼び出せるのは次の手順で権限を与える CES サービスエージェントだけにします。
+
+### 2. CES サービスエージェントに呼び出し権限を与える
+
+CES は `serviceAgentIdTokenAuthConfig` により、サービスエージェントの ID トークンで MCP サーバーを呼びます。そのサービスアカウントにこのサービスへの `run.invoker` を付与します。
+
+```bash
+gcloud run services add-iam-policy-binding harvest-commerce-mcp \
+  --region us-central1 \
+  --member serviceAccount:service-PROJECT_NUMBER@gcp-sa-ces.iam.gserviceaccount.com \
+  --role roles/run.invoker
+```
+
+### 3. エージェントのツールセットを差し替える
+
+```bash
+APP=projects/yamazakitlab/locations/us/apps/APP_ID
+curl -X PATCH -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H 'Content-Type: application/json' \
+  "https://ces.googleapis.com/v1beta/$APP/toolsets/TOOLSET_ID?updateMask=mcpToolset.serverAddress" \
+  -d '{"mcpToolset":{"serverAddress":"https://harvest-commerce-mcp-PROJECT_NUMBER.us-central1.run.app/mcp"}}'
+```
+
+差し替え後は前述のとおり**バージョン作成 → デプロイメント切り替え**を行わないと、公開ウィジェットには反映されません。
+
+### ローカルでの動作確認
+
+```bash
+cd mcp-server
+pip install -r requirements.txt
+PROJECT_NUMBER=800053188430 SITE_BASE_URL=http://localhost:8099 PORT=8091 python3 server.py
+
+curl -s -X POST http://localhost:8091/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+curl -s -X POST http://localhost:8091/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call",
+       "params":{"name":"search_products","arguments":{"query":"トマト","page_size":3}}}'
+```
 
 ## 起動方法
 
