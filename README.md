@@ -163,27 +163,70 @@ window.COMMERCE_SEARCH_API_URL = "https://harvest-search-api-xxxx.a.run.app";
   本サンプルはイベント送信を実装していないため、初期状態のランキングで動作します。
 
 ## CX Agent Studio エージェント (Agentic Commerce) の埋め込み
-CX Agent Studio (Conversational Agents / Dialogflow CX) で構築したエージェントを、トップページに **Dialogflow Messenger** ウィジェット(右下のチャットバブル)として表示できます。
+CX Agent Studio で構築したエージェントを、全ページの**右端にスライドインするチャットパネル**として表示します。実装は [js/agent-widget.js](js/agent-widget.js) の 1 ファイルのみで、右下のランチャーボタンから開閉します。
 
-1. [Conversational Agents コンソール](https://conversational-agents.cloud.google.com/) で対象エージェントを開きます。
-2. **「Integrations (統合)」→「Dialogflow Messenger」** を選択し、統合を有効化します。
-   - ウェブサイトで直接利用する場合は「未認証 API (Unauthenticated API)」を選択します。
-   - 表示される埋め込みコードに `project-id` / `agent-id` / `location` が含まれています。
-3. [js/agent-widget.js](js/agent-widget.js) の先頭にある設定を、取得した値に書き換えます:
-   ```javascript
-   window.AGENT_STUDIO_CONFIG = {
-     projectId: "yamazakitlab",
-     agentId: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",  // ← エージェントID (UUID)
-     location: "asia-northeast1",
-     languageCode: "ja",
-     chatTitle: "Harvest & Co. お買い物アシスタント"
-   };
-   ```
-4. トップページを再読み込みすると、右下にブランドカラー(ディープフォレストグリーン)のチャットバブルが表示されます。
+CX Agent Studio のエージェント (「アプリ」) は Dialogflow CX ではなく **CES API (`ces.googleapis.com`, Gemini Enterprise for Customer Experience)** 上にあります。Dialogflow Messenger (`df-messenger`) は使えないため、ウィジェットは自前で実装しています。
 
-*(※ `agentId` が `YOUR_` で始まるデフォルト値のままの場合、ウィジェットは読み込まれません)*
+### 仕組み
+ブラウザから CES を直接呼びます (Commerce Search と違い、プロキシは不要です)。
 
-**本番公開時の注意:** Dialogflow Messenger 統合の設定画面でドメイン制限 (allowed domains) を設定し、自サイトのドメインのみ許可することを推奨します。
+1. `POST {session}:generateChatToken` — **認証なしで呼べます**。セッション専用の短命 JWT (約1時間) が返ります。
+2. `POST {session}:streamRunSession` — 1 のトークンを `Authorization: Bearer` に載せて発話を送ります。応答は JSON 配列がチャンク分割でストリーミングされ、逐次描画します。
+
+会話履歴はセッション名でサーバー側に保持されるため、履歴の送り直しは不要です。セッションIDと表示用のログは `sessionStorage` に保存しており、商品ページやカートへ遷移しても会話が続きます。
+
+### 1. 公開アクセス付きの WEB_UI デプロイメントを作る
+`generateChatToken` を認証なしで呼ぶには、`channelType: WEB_UI` かつ公開アクセスを有効にしたデプロイメントが必要です。**許可オリジンは必ず自サイトのオリジンだけに絞ってください**(空にすると全オリジンから利用可能になります)。
+
+```bash
+APP="projects/YOUR_PROJECT/locations/us/apps/YOUR_APP_ID"
+
+curl -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "displayName": "web-widget",
+    "appVersion": "'"$APP"'/versions/YOUR_VERSION_ID",
+    "channelProfile": {
+      "channelType": "WEB_UI",
+      "webWidgetConfig": {
+        "webWidgetTitle": "Harvest & Co. お買い物アシスタント",
+        "modality": "CHAT_ONLY",
+        "theme": "LIGHT",
+        "securitySettings": {
+          "enablePublicAccess": true,
+          "enableOriginCheck": true,
+          "allowedOrigins": ["https://YOUR-SITE-URL"]
+        }
+      }
+    }
+  }' \
+  "https://ces.googleapis.com/v1beta/$APP/deployments?deploymentId=web-widget"
+```
+
+アプリID・バージョンID は `GET https://ces.googleapis.com/v1beta/projects/YOUR_PROJECT/locations/us/apps` および `.../apps/{app}/versions` で確認できます。
+
+### 2. サイト側に接続先を設定する
+[js/agent-widget.js](js/agent-widget.js) の先頭を書き換えます:
+
+```javascript
+window.AGENT_STUDIO_CONFIG = {
+  projectId: "yamazakitlab",
+  location: "us",                                 // CES アプリのリージョン
+  appId: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",  // ← アプリID (表示名ではなく name)
+  deploymentId: "web-widget",                     // ← 手順1で作ったデプロイメント
+  apiHost: "https://ces.googleapis.com",
+  chatTitle: "Harvest & Co. お買い物アシスタント",
+  subtitle: "商品選びのご相談をどうぞ",
+  greeting: "こんにちは！..."
+};
+```
+
+*(※ `appId` が `YOUR_` で始まるデフォルト値のままの場合、ウィジェットは読み込まれません)*
+
+### つながらないときは
+- **`Public access is not enabled for the deployment ...`** — 手順1の `enablePublicAccess` が `true` になっていません。`API` チャネルのデプロイメントでは公開アクセスを使えないため、`WEB_UI` のデプロイメントを別途作成してください。
+- **`Origin ... is not allowed for the deployment ...`** — `allowedOrigins` にサイトのオリジンが入っていません。独自ドメインを追加したときやプレビュー URL から開いたときに出ます。デプロイメントを `PATCH` して追加します。
+- **エージェントの応答言語** — 応答言語や口調は CX Agent Studio 側のエージェント指示 (instruction) で決まります。日本語で返させたい場合はコンソールでエージェントの指示を修正してください。ウィジェット側では制御していません。
 
 ### エージェント定義のインポート (agent/harvest-commerce-agent.zip)
 [agent/harvest-commerce-agent.zip](agent/harvest-commerce-agent.zip) は、CX Agent Studio (Conversational Agents / Dialogflow CX) に**リストア(インポート)可能なエージェント定義**です。以下の機能を含みます:
@@ -205,9 +248,9 @@ CX Agent Studio (Conversational Agents / Dialogflow CX) で構築したエージ
 2. [Conversational Agents コンソール](https://conversational-agents.cloud.google.com/) で新しい空のエージェントを作成します (リージョン: `asia-northeast1` 推奨)。
 3. エージェントの **「⋮」メニュー →「Restore (リストア)」** を選択し、`agent/harvest-commerce-agent.zip` をアップロードします。**リストアは既存のエージェント内容を上書きするため、必ず新規作成したエージェントに対して実行してください。**
 4. リストア後、**Manage → Webhooks → `harvest-webhook`** を開き、URI を手順1でデプロイした Cloud Run の URL に書き換えます。
-5. 「Integrations → Dialogflow Messenger」を有効化し、`agent-id` を `js/agent-widget.js` に設定します (前述)。
+5. 動作確認はコンソールのシミュレータで行えます。**この zip は Dialogflow CX 形式で、本サイトのウィジェット (CES API) からは呼び出せません。** サイトに載せる場合は CX Agent Studio 側でアプリとして作り直し、前述の手順でデプロイメントを作成してください。
 
-**カート連携の仕組み:** カートはブラウザの `localStorage` で管理されているため、webhook はカスタムペイロード (`{ command: "add_to_cart", productId }`) やボタンリンク (`#add-to-cart-<id>`) を返し、サイト側の [js/agent-widget.js](js/agent-widget.js) がそれを検出して `addToCart()` を実行します。エージェント単体(コンソールのシミュレータ)でもテキスト応答は確認できますが、実際のカート追加は本サイト上のウィジェット経由でのみ動作します。
+**カート連携の仕組み:** カートはブラウザの `localStorage` で管理されているため、エージェントは構造化ペイロード (`{ command: "add_to_cart", productId }`) や応答テキスト中のリンク (`#add-to-cart-<id>`) を返し、サイト側の [js/agent-widget.js](js/agent-widget.js) がそれを検出して `addToCart()` を実行します。エージェント単体(コンソールのシミュレータ)でもテキスト応答は確認できますが、実際のカート追加は本サイト上のウィジェット経由でのみ動作します。
 
 ## 起動方法
 
