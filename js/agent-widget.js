@@ -434,20 +434,36 @@ window.AGENT_STUDIO_CONFIG = {
     return wrap;
   }
 
-  // streaming = true のときはウィジェットを描かない (JSON がまだ完成していない)
-  function setMessageContent(el, text, streaming) {
-    const { body, widgets } = splitWidgets(text);
-    el.innerHTML = renderMarkdown(body);
+  // CES はウィジェットをテキスト中の [widget:...] 記法で返すこともあれば、
+  // 構造化された payload (type: product_detail_carousel など) で返すこともある。
+  // どちらで来ても同じカードになるよう、payload 側もここで拾う。
+  function payloadWidget(payload) {
+    if (!payload || typeof payload !== "object") return null;
+    if (Array.isArray(payload.productDetails)) return { name: payload.type || "payload", data: payload };
+    // 一段ネストされて届くことがあるので、直下だけ探す
+    for (const value of Object.values(payload)) {
+      if (value && typeof value === "object" && Array.isArray(value.productDetails)) {
+        return { name: payload.type || "payload", data: value };
+      }
+    }
+    return null;
+  }
+
+  // streaming = true のときはテキスト側のウィジェットを描かない (JSON がまだ完成していない)
+  function setMessageContent(el, text, streaming, widgets) {
+    const parsed = splitWidgets(text);
+    el.innerHTML = renderMarkdown(parsed.body);
     if (streaming) return;
-    const cards = widgets.map(renderWidget).filter(Boolean);
+    const all = parsed.widgets.concat(widgets || []);
+    const cards = all.map(renderWidget).filter(Boolean);
     cards.forEach((c) => el.appendChild(c));
     el.classList.toggle("has-widget", cards.length > 0);
   }
 
-  function appendMessage(role, text, streaming) {
+  function appendMessage(role, text, streaming, widgets) {
     const el = document.createElement("div");
     el.className = `harvest-agent-msg ${role}`;
-    setMessageContent(el, text, streaming);
+    setMessageContent(el, text, streaming, widgets);
     log.insertBefore(el, statusEl);
     scrollToBottom();
     return el;
@@ -485,9 +501,9 @@ window.AGENT_STUDIO_CONFIG = {
     } catch (_) { /* 容量超過などは黙って諦める */ }
   }
 
-  function recordHistory(role, text) {
+  function recordHistory(role, text, widgets) {
     const entries = loadHistory();
-    entries.push({ role, text });
+    entries.push(widgets && widgets.length ? { role, text, widgets } : { role, text });
     saveHistory(entries);
   }
 
@@ -516,6 +532,7 @@ window.AGENT_STUDIO_CONFIG = {
 
     let bubble = null;
     let answer = "";
+    const widgets = [];
 
     try {
       await sendToAgent(text, {
@@ -527,17 +544,20 @@ window.AGENT_STUDIO_CONFIG = {
             if (!bubble) bubble = appendMessage("agent", answer, true);
             else { setMessageContent(bubble, answer, true); scrollToBottom(); }
           }
-          // エージェントからのカート操作指示
           if (out.payload) {
+            // エージェントからのカート操作指示
             findAddToCartCommands(out.payload).forEach((cmd) => addToCartById(cmd.productId));
+            const widget = payloadWidget(out.payload);
+            if (widget) widgets.push(widget);
           }
         }
       });
-      if (answer) {
-        // 受信完了後に描き直して、ウィジェット記法をカードに置き換える
-        setMessageContent(bubble, answer, false);
+      if (answer || widgets.length) {
+        // 受信完了後に描き直して、ウィジェット記法とペイロードをカードに置き換える
+        if (!bubble) bubble = appendMessage("agent", answer, true);
+        setMessageContent(bubble, answer, false, widgets);
         scrollToBottom();
-        recordHistory("agent", answer);
+        recordHistory("agent", answer, widgets);
       } else {
         appendMessage("agent", "うまく応答できませんでした。もう一度お試しください。");
       }
@@ -632,7 +652,7 @@ window.AGENT_STUDIO_CONFIG = {
 
     const history = loadHistory();
     if (history.length) {
-      history.forEach((entry) => appendMessage(entry.role, entry.text));
+      history.forEach((entry) => appendMessage(entry.role, entry.text, false, entry.widgets));
     } else if (cfg.greeting) {
       // 挨拶も履歴に含める。含めないとページ遷移のたびに消えてしまう。
       appendMessage("agent", cfg.greeting);

@@ -223,6 +223,14 @@ window.AGENT_STUDIO_CONFIG = {
 
 *(※ `appId` が `YOUR_` で始まるデフォルト値のままの場合、ウィジェットは読み込まれません)*
 
+### 商品カードの描画について
+CES は商品ウィジェットを**2通りの経路**で返してきます。ウィジェットはどちらも同じ商品カードに変換します。
+
+1. **応答テキスト中の `[widget:product_list]` 記法** — タグの直後に JSON が続きます。ストリーミング中は JSON がまだ閉じていないため、受信完了後にまとめてカードへ置き換えます (途中の壊れた JSON を画面に出さないため)。
+2. **構造化 `payload`** — `{"type":"product_detail_carousel","productDetails":[...]}` の形で `SessionOutput.payload` に入ってきます。
+
+カードのリンク先は、商品IDがこのサイトのカタログに存在すればサイト内の `product.html?id=<id>` を使います。無い場合はエージェントが返した `uri` を使いますが、**同一オリジンのURLに限ります** — エージェントの出力で任意の外部サイトへ誘導できてしまうのを防ぐためです。
+
 ### つながらないときは
 - **`Public access is not enabled for the deployment ...`** — 手順1の `enablePublicAccess` が `true` になっていません。`API` チャネルのデプロイメントでは公開アクセスを使えないため、`WEB_UI` のデプロイメントを別途作成してください。
 - **`Origin ... is not allowed for the deployment ...`** — `allowedOrigins` にサイトのオリジンが入っていません。独自ドメインを追加したときやプレビュー URL から開いたときに出ます。デプロイメントを `PATCH` して追加します。
