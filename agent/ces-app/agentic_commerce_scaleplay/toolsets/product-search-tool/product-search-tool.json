@@ -1,0 +1,12 @@
+{
+  "name": "cdf5336b-314b-474e-a54a-14bac5d5693f",
+  "displayName": "product-search-tool",
+  "mcpToolset": {
+    "serverAddress": "https://harvest-commerce-mcp-800053188430.us-central1.run.app/mcp",
+    "apiAuthentication": {
+      "serviceAgentIdTokenAuthConfig": {
+      }
+    }
+  },
+  "executionType": "SYNCHRONOUS"
+}

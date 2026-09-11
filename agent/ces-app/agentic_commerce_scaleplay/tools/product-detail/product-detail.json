@@ -1,0 +1,58 @@
+{
+  "name": "af32abdf-f521-4f00-8897-9bd49fe58a9b",
+  "displayName": "product-detail",
+  "widgetTool": {
+    "name": "product-detail",
+    "widgetType": "PRODUCT_DETAILS",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "imageUris": {
+          "type": "ARRAY",
+          "description": "A list of direct URLs to images displaying the product.",
+          "items": {
+            "type": "STRING"
+          }
+        },
+        "price": {
+          "type": "STRING",
+          "description": "The current selling price of the product."
+        },
+        "productId": {
+          "type": "STRING",
+          "description": "The unique identifier for this specific product."
+        },
+        "rating": {
+          "type": "NUMBER",
+          "description": "The average aggregate user rating for the product, typically on a scale of 1.0 to 5.0. Leave null if no ratings exist."
+        },
+        "review": {
+          "type": "OBJECT",
+          "properties": {
+            "count": {
+              "type": "INTEGER",
+              "description": "The total number of individual user reviews received for this product."
+            },
+            "reviewUri": {
+              "type": "STRING",
+              "description": "The URL directing users to a dedicated page or section where they can read all customer reviews."
+            }
+          },
+          "description": "A summary object containing the total count of reviews and a link to read them. Leave null if no reviews exist."
+        },
+        "subtitle": {
+          "type": "STRING",
+          "description": "A longer, secondary line of text for additional context or description of the product."
+        },
+        "title": {
+          "type": "STRING",
+          "description": "Required. The primary name of the product as listed (e.g., \"Men\u0027s Running Shoes\")."
+        },
+        "uri": {
+          "type": "STRING",
+          "description": "The URL directing users to the main product detail page on the website."
+        }
+      }
+    }
+  }
+}

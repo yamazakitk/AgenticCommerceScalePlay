@@ -1,0 +1,7 @@
+{
+  "name": "a9c89803-ac16-4b57-a9d2-84d848bd53dd",
+  "displayName": "Root agent",
+  "instruction": "agents/Root_agent/instruction.txt",
+  "tools": ["update_username"],
+  "childAgents": ["Farewall Agent", "Search-Agent"]
+}

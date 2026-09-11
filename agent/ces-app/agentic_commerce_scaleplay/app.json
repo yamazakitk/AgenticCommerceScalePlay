@@ -1,0 +1,38 @@
+{
+  "name": "578f4b51-97fc-4f59-a5a9-965d99c2dfea",
+  "displayName": "agentic_commerce_scaleplay",
+  "rootAgent": "Root agent",
+  "audioProcessingConfig": {
+    "synthesizeSpeechConfigs": {
+      "ja-JP": {
+      }
+    }
+  },
+  "loggingSettings": {
+    "conversationLoggingSettings": {
+      "retentionWindow": "31536000s"
+    }
+  },
+  "guardrails": ["Default Safety Guardrail", "Default Prompt Guardrail"],
+  "modelSettings": {
+    "model": "gemini-3.7-flash",
+    "temperature": 1.0
+  },
+  "variableDeclarations": [{
+    "name": "username",
+    "schema": {
+      "type": "STRING"
+    }
+  }],
+  "languageSettings": {
+    "defaultLanguageCode": "ja-JP"
+  },
+  "defaultChannelProfile": {
+  },
+  "timeZoneSettings": {
+    "timeZone": "America/Los_Angeles"
+  },
+  "toolExecutionMode": "PARALLEL",
+  "errorHandlingSettings": {
+  }
+}
