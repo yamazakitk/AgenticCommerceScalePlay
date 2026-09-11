@@ -27,23 +27,16 @@ function saveCart() {
   window.dispatchEvent(new CustomEvent('cartUpdated'));
 }
 
-// Add item to cart
-function addToCart(productId, quantity = 1) {
-  loadCart();
+// Find product details from window.products (loaded from Firestore or local fallback in products.js)
+function findProduct(productId) {
+  const id = Number(productId);
+  return (window.products || []).find(p => Number(p.id) === id);
+}
 
-  // Find product details from window.products (loaded from Firestore or local fallback in products.js)
-  const product = (window.products || []).find(p => p.id === productId);
-  if (!product) {
-    console.error('Product not found:', productId);
-    return;
-  }
-
-  if (!product.inStock) {
-    showToast('申し訳ありません。この商品は現在売り切れです。', 'error');
-    return;
-  }
-
-  const existingItemIndex = cart.findIndex(item => item.id === productId);
+// Put one product into the in-memory cart. The caller is responsible for
+// saving and for telling the user — so that bulk adds can do both once.
+function pushToCart(product, quantity) {
+  const existingItemIndex = cart.findIndex(item => item.id === product.id);
 
   if (existingItemIndex > -1) {
     cart[existingItemIndex].quantity += quantity;
@@ -58,11 +51,77 @@ function addToCart(productId, quantity = 1) {
       quantity: quantity
     });
   }
+}
+
+// Add item to cart
+function addToCart(productId, quantity = 1) {
+  loadCart();
+
+  const product = findProduct(productId);
+  if (!product) {
+    console.error('Product not found:', productId);
+    return { added: false, reason: 'unknown' };
+  }
+
+  if (!product.inStock) {
+    showToast('申し訳ありません。この商品は現在売り切れです。', 'error');
+    return { added: false, reason: 'outOfStock' };
+  }
+
+  pushToCart(product, quantity);
 
   saveCart();
   showToast(`${product.name} をカートに追加しました。`);
   animateCartBadge();
   updateDrawerUI();
+  return { added: true };
+}
+
+// Add several products at once (used by the shopping assistant's
+// "まとめてカートに追加" button). Saving and the toast happen once at the end,
+// otherwise a list of 10 products would stack up 10 toasts.
+function addItemsToCart(productIds, quantity = 1) {
+  loadCart();
+
+  const added = [];
+  const outOfStock = [];
+  const unknown = [];
+  const seen = new Set();
+
+  (productIds || []).forEach(productId => {
+    const id = Number(productId);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+
+    const product = findProduct(id);
+    if (!product) { unknown.push(id); return; }
+    if (!product.inStock) { outOfStock.push(product.name); return; }
+
+    pushToCart(product, quantity);
+    added.push(product.name);
+  });
+
+  if (added.length) {
+    saveCart();
+    animateCartBadge();
+    updateDrawerUI();
+  }
+
+  if (unknown.length) {
+    console.warn('Products not found:', unknown);
+  }
+
+  if (added.length && outOfStock.length) {
+    showToast(`${added.length} 点をカートに追加しました (${outOfStock.length} 点は売り切れです)。`);
+  } else if (added.length) {
+    showToast(`${added.length} 点をカートに追加しました。`);
+  } else if (outOfStock.length) {
+    showToast('いずれも現在売り切れです。', 'error');
+  } else {
+    showToast('カートに追加できる商品がありませんでした。', 'error');
+  }
+
+  return { added, outOfStock, unknown };
 }
 
 // Update quantity of an item
@@ -433,6 +492,7 @@ window.addEventListener('cartUpdated', () => {
 // Expose variables globally
 window.loadCart = loadCart;
 window.addToCart = addToCart;
+window.addItemsToCart = addItemsToCart;
 window.updateCartQuantity = updateCartQuantity;
 window.removeFromCart = removeFromCart;
 window.clearCart = clearCart;

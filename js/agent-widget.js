@@ -275,6 +275,17 @@
     .harvest-agent-card-title { font-size: 0.8125rem; font-weight: 500; line-height: 1.35; }
     .harvest-agent-card-sub { font-size: 0.75rem; color: var(--text-secondary, #5C625E); }
     .harvest-agent-card-price { font-size: 0.8125rem; font-weight: 600; color: var(--primary-color, #1A3A2B); }
+    .harvest-agent-bulk-add {
+      align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; font-family: inherit; font-size: 0.8125rem; font-weight: 600;
+      color: #FFFFFF; background: var(--primary-color, #1A3A2B);
+      border: none; border-radius: var(--radius-sm, 6px); cursor: pointer;
+    }
+    .harvest-agent-bulk-add:hover:not(:disabled) { background: var(--accent-color, #D4A373); }
+    .harvest-agent-bulk-add:disabled { opacity: 0.55; cursor: default; }
+    .harvest-agent-bulk-note {
+      margin-top: 4px; font-size: 0.75rem; color: var(--text-secondary, #5C625E);
+    }
 
     .harvest-agent-status {
       align-self: flex-start; font-size: 0.75rem;
@@ -338,7 +349,11 @@
   // という記法で埋め込んで返してくる (CES 公式ウィジェットが描画する前提)。
   // そのまま出すと生 JSON が見えてしまうので、切り出してカードとして描く。
 
-  const WIDGET_MARKER = /\[widget:([A-Za-z0-9_-]+)\]\s*/;
+  // 同じ記法でカート操作も受け取る。「全部カートに入れて」に対して
+  //   [cart:add]
+  //   { "productIds": ["1", "3"] }
+  // が返ってくる。描画はせず、受信した回だけ実行する。
+  const MARKER = /\[(widget|cart):([A-Za-z0-9_-]+)\]\s*/;
 
   // text[from] から始まる JSON オブジェクトの終端を返す (文字列リテラルを考慮)
   function findJsonEnd(text, from) {
@@ -362,11 +377,12 @@
 
   function splitWidgets(text) {
     const widgets = [];
+    const cartAdds = [];
     let body = "";
     let rest = String(text);
 
     for (;;) {
-      const match = WIDGET_MARKER.exec(rest);
+      const match = MARKER.exec(rest);
       if (!match) { body += rest; break; }
       body += rest.slice(0, match.index);
 
@@ -379,11 +395,16 @@
       if (jsonEnd < 0) break;
 
       try {
-        widgets.push({ name: match[1], data: JSON.parse(rest.slice(jsonStart, jsonEnd)) });
+        const data = JSON.parse(rest.slice(jsonStart, jsonEnd));
+        if (match[1] === "cart") {
+          if (match[2] === "add" && Array.isArray(data.productIds)) cartAdds.push(data.productIds);
+        } else {
+          widgets.push({ name: match[2], data });
+        }
       } catch (_) { /* 壊れた JSON は無視 */ }
       rest = rest.slice(jsonEnd);
     }
-    return { body: body.trim(), widgets };
+    return { body: body.trim(), widgets, cartAdds };
   }
 
   function formatPrice(value) {
@@ -430,6 +451,67 @@
     return card;
   }
 
+  // 一覧のうち、このサイトのカタログに実在する商品IDだけを重複なく拾う。
+  // エージェント側のカタログにしか無い商品はカートに入れられないため。
+  function catalogProductIds(items) {
+    const ids = [];
+    const seen = new Set();
+    items.forEach((item) => {
+      const id = Number(item && item.productId);
+      if (!id || seen.has(id)) return;
+      if (Array.isArray(window.products) && window.products.length &&
+          !window.products.some((p) => Number(p.id) === id)) return;
+      seen.add(id);
+      ids.push(id);
+    });
+    return ids;
+  }
+
+  // addItemsToCart() が返す内訳のうち、追加できなかった分の説明文
+  function describeSkipped(result) {
+    const skipped = [];
+    if ((result.outOfStock || []).length) skipped.push(`${result.outOfStock.length} 点は売り切れ`);
+    if ((result.unknown || []).length) skipped.push(`${result.unknown.length} 点は取り扱い外`);
+    return skipped.length ? `${skipped.join("・")}のため追加していません。` : "";
+  }
+
+  // 検索結果をまとめてカートに入れるボタン。1件しか無いときは
+  // カードから商品ページへ行けば済むので出さない。
+  function buildBulkAdd(items) {
+    const ids = catalogProductIds(items);
+    if (ids.length < 2 || typeof window.addItemsToCart !== "function") return null;
+
+    const box = document.createElement("div");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "harvest-agent-bulk-add";
+    button.textContent = `${ids.length} 点まとめてカートに追加`;
+    box.appendChild(button);
+
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      const run = () => {
+        const result = window.addItemsToCart(ids) || {};
+        const added = (result.added || []).length;
+        button.textContent = added ? `${added} 点をカートに追加しました` : "追加できませんでした";
+        button.disabled = added > 0;
+
+        const skipped = describeSkipped(result);
+        if (skipped) {
+          const note = document.createElement("p");
+          note.className = "harvest-agent-bulk-note";
+          note.textContent = skipped;
+          box.appendChild(note);
+        }
+      };
+      // 商品カタログの読み込み完了を待ってから追加する (addToCartById と同じ理由)
+      if (window.productsReady) window.productsReady.then(run, run);
+      else run();
+    });
+
+    return box;
+  }
+
   function renderWidget(widget) {
     // product_list は productDetails の配列、product-detail は単体。
     // compare_products など未対応のものは黙って捨てる (生 JSON を出すよりまし)。
@@ -442,6 +524,9 @@
     const wrap = document.createElement("div");
     wrap.className = "harvest-agent-cards";
     items.forEach((item) => wrap.appendChild(buildCard(item)));
+
+    const bulkAdd = buildBulkAdd(items);
+    if (bulkAdd) wrap.appendChild(bulkAdd);
     return wrap;
   }
 
@@ -597,6 +682,9 @@
         setMessageContent(bubble, answer, false, widgets);
         scrollToBottom();
         recordHistory("agent", answer, widgets);
+        // カート操作はここでだけ実行する。描画側でやると履歴を復元するたびに
+        // 二重で追加されてしまう。
+        applyCartAdds(splitWidgets(answer).cartAdds, bubble);
       } else {
         appendMessage("agent", "うまく応答できませんでした。もう一度お試しください。");
       }
@@ -725,6 +813,33 @@
     const run = () => window.addToCart(id);
     // 商品カタログの読み込み完了を待ってから追加する
     if (window.productsReady) window.productsReady.then(run);
+    else run();
+  }
+
+  // 「全部カートに入れて」への応答に含まれる [cart:add] を実行する。
+  // 呼び出しは submit() から 1 回だけ (履歴の復元では実行しない)。
+  function applyCartAdds(idLists, bubble) {
+    const ids = [];
+    (idLists || []).forEach((list) => list.forEach((value) => {
+      const id = Number(value);
+      if (id && !ids.includes(id)) ids.push(id);
+    }));
+    if (!ids.length || typeof window.addItemsToCart !== "function") return;
+
+    const run = () => {
+      const result = window.addItemsToCart(ids) || {};
+      const added = (result.added || []).length;
+      const skipped = describeSkipped(result);
+
+      const note = document.createElement("p");
+      note.className = "harvest-agent-bulk-note";
+      note.textContent = added ? `${added} 点をカートに追加しました。${skipped}`
+        : skipped || "カートに追加できる商品がありませんでした。";
+      (bubble || log).appendChild(note);
+      scrollToBottom();
+    };
+    // 商品カタログの読み込み完了を待ってから追加する
+    if (window.productsReady) window.productsReady.then(run, run);
     else run();
   }
 
