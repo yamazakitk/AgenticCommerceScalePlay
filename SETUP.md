@@ -153,7 +153,7 @@ API キーが混入しません。
 ### 1-4. 実行後にやること
 
 1. **完了メッセージに出るサイト URL を開く。** 商品一覧が表示され、ヘッダー検索が効き、
-   右下にチャットウィジェットが出れば成功です。詳しくは [9. 動作確認チェックリスト](#9-動作確認チェックリスト)。
+   右下にチャットウィジェットが出れば成功です。詳しくは [A-9. 動作確認チェックリスト](#a-9-動作確認チェックリスト)。
 2. **Firestore のセキュリティルール**を確認する。サイトは Firebase Web SDK で
    クライアントから直接 `products` コレクションを読むため、読み取りを許可する必要があります。
    デモ用途なら以下で十分です (書き込みは禁止)。
@@ -166,6 +166,12 @@ API キーが混入しません。
      }
    }
    ```
+
+   ルールを入れないと Firestore は読み取りを拒否しますが、**サイトはエラーにならず
+   [js/products.js](js/products.js) に同梱した 28 件のカタログに黙ってフォールバックします**。
+   一見動いているように見えるので、Firestore を使っているつもりなら DevTools の
+   コンソールで `Firestore から 28 件の商品を読み込みました。` が出ているか確認してください。
+   `Firestore からの読み込みに失敗しました` が出ていたら、このルールが未設定です。
 
 3. カタログ取り込みが Retail の学習に反映されるまで、検索精度が安定しないことがあります。
 
@@ -192,7 +198,10 @@ API キーが混入しません。
 仕組みを理解したいとき、一部だけやり直したいとき、`setup.sh` が失敗した原因を切り分けたい
 ときに参照してください。**クイックスタートで完了している場合、以下は不要です。**
 
-## 1. 前提
+節番号に `A-` を付けているのは、クイックスタート側の「1-1.」などと見分けるためです
+(「手順 A-4」と書いてあれば付録の 4 節を指します)。
+
+## A-1. 前提
 
 ```bash
 # 必要なツール: gcloud, node (18+), python3, docker は不要 (--source ビルドを使う)
@@ -204,7 +213,7 @@ gcloud config set project YOUR_PROJECT_ID
 gcloud projects describe YOUR_PROJECT_ID --format='value(projectNumber)'
 ```
 
-### 1-1. API を有効化する
+### A-1-1. API を有効化する
 
 ```bash
 gcloud services enable \
@@ -221,7 +230,7 @@ gcloud services enable \
 AI Commerce Search (Retail API) は初回に **Console 上での利用規約の同意とデータ利用設定** が必要です。
 [Search for commerce のコンソール](https://console.cloud.google.com/ai/retail) を一度開いてセットアップを完了させてください。
 
-### 1-2. サービスアカウントに権限を付与する
+### A-1-2. サービスアカウントに権限を付与する
 
 Cloud Run のサービスは既定で Compute のデフォルト SA (`PROJECT_NUMBER-compute@developer.gserviceaccount.com`)
 として動きます。このサンプルはそれをそのまま使う前提です。
@@ -240,7 +249,7 @@ gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
 
 ---
 
-## 2. EC サイトを Cloud Run にデプロイする (URL を確定させる)
+## A-2. EC サイトを Cloud Run にデプロイする (URL を確定させる)
 
 この時点では Firestore も検索もエージェントも未設定ですが、サイトは
 [js/products.js](js/products.js) のローカルカタログにフォールバックして動作します。
@@ -269,7 +278,7 @@ echo $SITE_URL
 
 ---
 
-## 3. 商品データを Firestore に登録する
+## A-3. 商品データを Firestore に登録する
 
 サイトの商品グリッド・商品詳細ページが読むデータです。
 
@@ -286,7 +295,7 @@ cd ..
 - ドキュメント ID は商品 ID (`"1"`〜`"28"`)。再実行は上書きなので何度でも安全です。
 - コレクション名を変える場合は `--collection <NAME>`。
 
-### 3-1. フロントエンドを Firestore につなぐ
+### A-3-1. フロントエンドを Firestore につなぐ
 
 1. [Firebase コンソール](https://console.firebase.google.com/) でプロジェクトにウェブアプリを追加し、
    構成オブジェクトを取得します。
@@ -308,14 +317,22 @@ cd ..
    }
    ```
 
+> **`apiKey` は秘密情報ではありません。** Firebase の Web API キーはブラウザに配る前提の
+> 識別子で、実際このリポジトリの構成でも `js/config.js` として公開サイトから誰でも取得できます
+> ([Firebase の公式ドキュメント](https://firebase.google.com/docs/projects/api-keys) も
+> 「秘密として扱う必要はない」と明記しています)。データを守っているのは上のセキュリティルールです。
+> そのうえで多層防御として、Google Cloud コンソールの
+> 「APIとサービス → 認証情報」でこのキーに **HTTP リファラー制限** (サイトのオリジンのみ) と
+> **API 制限** (`firestore.googleapis.com` など実際に使うものだけ) を掛けておくことを勧めます。
+
 ---
 
-## 4. AI Commerce Search のカタログに商品を取り込む
+## A-4. AI Commerce Search のカタログに商品を取り込む
 
-### 4-1. 取り込みファイルを生成する
+### A-4-1. 取り込みファイルを生成する
 
 `products.jsonl` は [js/products.js](js/products.js) から生成します。
-**手順 2 で得た URL を渡してください** (商品詳細ページの `uri` に埋め込まれます)。
+**手順 A-2 で得た URL を渡してください** (商品詳細ページの `uri` に埋め込まれます)。
 
 ```bash
 SITE_BASE_URL=$SITE_URL python3 js/convert_products.py
@@ -343,7 +360,7 @@ SITE_BASE_URL=$SITE_URL python3 js/convert_products.py
 | 言語 | `languageCode: "ja"` | 未指定 — 日本語のトークナイズが効かず部分語で引けない |
 | 画像 | `images: [{"uri": "…"}]` | 商品ページの URL を入れる — カードが壊れる |
 
-### 4-2. 取り込む
+### A-4-2. 取り込む
 
 **Console から** (推奨): [AI Commerce Search → Data → Import](https://console.cloud.google.com/ai/retail/catalogs)
 で `products.jsonl` を `default_catalog` の `default_branch` にインポートします。
@@ -372,7 +389,7 @@ curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
 
 ---
 
-## 5. 検索 API (search-api) をデプロイする
+## A-5. 検索 API (search-api) をデプロイする
 
 Retail の `servingConfigs:search` は OAuth2 必須でブラウザから直接呼べないため、Cloud Run 経由にします。
 
@@ -408,7 +425,7 @@ window.COMMERCE_SEARCH_API_URL = "https://harvest-search-api-XXXX.a.run.app";
 
 ---
 
-## 6. MCP サーバー (mcp-server) をデプロイする
+## A-6. MCP サーバー (mcp-server) をデプロイする
 
 エージェントがこのサイトのカタログを検索できるようにするための MCP サーバーです。
 公開しているツールは `search_products` / `get_product_details` /
@@ -434,7 +451,7 @@ gcloud run services add-iam-policy-binding harvest-commerce-mcp \
 ```
 
 > `service-PROJECT_NUMBER@gcp-sa-ces.iam.gserviceaccount.com` は CES を初めて使ったときに
-> 自動生成されます。存在しないと言われる場合は、先に手順 7 で CES アプリを 1 つ作ってください。
+> 自動生成されます。存在しないと言われる場合は、先に手順 A-7 で CES アプリを 1 つ作ってください。
 
 ローカルでの動作確認 (Cloud Run にデプロイする前に試す場合):
 
@@ -449,11 +466,11 @@ curl -s -X POST http://localhost:8091/mcp -H 'Content-Type: application/json' \
 
 ---
 
-## 7. CES エージェントを構成する
+## A-7. CES エージェントを構成する
 
 エージェント定義一式は [agent/ces-app/](agent/ces-app/) にエクスポート済みです。
 **インポートすれば、エージェント・指示文・ウィジェットツール・MCP ツールセット・ガードレールが
-まとめて再現されます** (手順 7-A)。コンソールで一から組み立てたい場合は手順 7-B を参照してください。
+まとめて再現されます** (手順 A-7-A)。コンソールで一から組み立てたい場合は手順 A-7-B を参照してください。
 
 ### リポジトリに入っているアプリ定義
 
@@ -490,7 +507,7 @@ Root agent ─┬─> Search-Agent ──> Product-Comparison-Agent
 3. 材料から分量表記を落とし、食材名ごとに MCP ツール `search_products` を呼んでカタログを照会します。これを材料の数だけ繰り返します。
 4. 見つかった商品を `product_list` ウィジェットで並べ、ヒットしなかった食材は「お取り扱いがありません」と明示してルートエージェントに返します。
 
-> **補足:** 手順 3 は Search-Agent に問い合わせているわけではなく、Search-Agent が使っているのと同じ MCP ツール
+> **補足:** 上の 3. は Search-Agent に問い合わせているわけではなく、Search-Agent が使っているのと同じ MCP ツール
 > (`product_search_tool_search_products`) を Recipe-Agent が直接呼んでいます。CES の `AgentTool` は
 > `projects/{project}/locations/{location}/agents/{agent}` 形式の**アプリ外**のエージェントしか参照できず、
 > v1beta にこのコレクションが無いため、同一アプリ内のエージェントを「ツールとして呼んで結果を受け取る」ことが
@@ -515,7 +532,7 @@ Root agent ─┬─> Search-Agent ──> Product-Comparison-Agent
 git diff agent/ces-app                                            # 差分を確認してからコミット
 ```
 
-### 7-A. アプリ定義をインポートする (推奨)
+### A-7-A. アプリ定義をインポートする (推奨)
 
 ```bash
 # 新しいアプリとして作成する (アプリIDは自動採番)
@@ -558,7 +575,7 @@ curl -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
 **インポート後に必ず直すもの:**
 
 1. **MCP ツールセットの向き先** — `toolsets/product-search-tool/product-search-tool.json` の
-   `serverAddress` はエクスポート元プロジェクトの Cloud Run URL のままです。手順 6 でデプロイした
+   `serverAddress` はエクスポート元プロジェクトの Cloud Run URL のままです。手順 A-6 でデプロイした
    自分の URL に差し替えます。
 
    ```bash
@@ -575,11 +592,11 @@ curl -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
    ```
 
    インポート前に JSON を書き換えておいても構いません (その場合この手順は不要)。
-2. **CES サービスエージェントへの `run.invoker`** — 手順 6 の IAM 付与がまだなら実施します
+2. **CES サービスエージェントへの `run.invoker`** — 手順 A-6 の IAM 付与がまだなら実施します
    (アプリを作ると `service-PROJECT_NUMBER@gcp-sa-ces.iam.gserviceaccount.com` が生成されます)。
 3. **Search-Agent の指示文中の URL 例** — 例示用にエクスポート元サイトの URL が入っています。
    動作には影響しませんが、気になる場合は自分のサイトの URL に置き換えます。
-4. **デプロイメントは含まれません** — `deployments` はエクスポートの対象外です。手順 7-C で作成します。
+4. **デプロイメントは含まれません** — `deployments` はエクスポートの対象外です。手順 A-7-C で作成します。
 
 アプリ ID は次で確認できます。
 
@@ -588,7 +605,7 @@ curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
   "https://ces.googleapis.com/v1beta/projects/YOUR_PROJECT_ID/locations/us/apps"
 ```
 
-### 7-B. コンソールで手作業で構成する場合
+### A-7-B. コンソールで手作業で構成する場合
 
 [CX Agent Studio コンソール](https://console.cloud.google.com/gen-app-builder/ces) でアプリを新規作成し
 (location は `us`)、上の構成表と同じエージェントを用意します。
@@ -614,7 +631,7 @@ curl -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
 ```
 
 - **エンドポイントは `/mcp` まで含めます。**
-- 認証は `serviceAgentIdTokenAuthConfig` (手順 6 で `run.invoker` を与えた SA が ID トークンで呼びます)。
+- 認証は `serviceAgentIdTokenAuthConfig` (手順 A-6 で `run.invoker` を与えた SA が ID トークンで呼びます)。
 
 そのうえで Search-Agent を開き、
 
@@ -635,7 +652,7 @@ Recipe-Agent を手で作る場合は、
    (`recipe_web_search` は Tools → Google Search で新規作成します)
 3. Root agent の **Sub-agents** に Recipe-Agent を追加し、指示文に委譲のサブタスクを足す
 
-### 7-C. 公開アクセス付きの WEB_UI デプロイメントを作る
+### A-7-C. 公開アクセス付きの WEB_UI デプロイメントを作る
 
 `generateChatToken` をブラウザから認証なしで呼ぶために必要です。
 **`allowedOrigins` は必ず自サイトのオリジンだけに絞ってください** (空にすると全オリジンから利用可能になります)。
@@ -669,7 +686,7 @@ curl -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
   "https://ces.googleapis.com/v1beta/$APP/deployments?deploymentId=web-widget"
 ```
 
-### 7-D. サイト側に接続先を設定する
+### A-7-D. サイト側に接続先を設定する
 
 `js/config.js` の `window.AGENT_STUDIO_CONFIG` を書き換えます。
 
@@ -705,9 +722,9 @@ window.AGENT_STUDIO_CONFIG = {
 
 ---
 
-## 8. サイトを再デプロイする
+## A-8. サイトを再デプロイする
 
-手順 3-1 / 5 / 7-D で書き換えた設定ファイルはサイトのコンテナに焼き込まれているため、
+手順 A-3-1 / A-5 / A-7-D で書き換えた設定ファイルはサイトのコンテナに焼き込まれているため、
 最後にもう一度デプロイして反映します。
 
 ```bash
@@ -717,13 +734,13 @@ gcloud run deploy agentic-commerce \
 
 ---
 
-## 9. 動作確認チェックリスト
+## A-9. 動作確認チェックリスト
 
 | # | 確認内容 | 期待結果 |
 | --- | --- | --- |
 | 1 | サイトを開く | 商品グリッドに 28 件。DevTools のコンソールに `Firestore から 28 件の商品を読み込みました。` |
 | 2 | ヘッダーの検索窓 | プレースホルダーが `AI Commerce Search で検索...` になっている |
-| 3 | 「トマト」で検索 | 完熟トマトが先頭。0 件なら手順 4 の取り込みか `languageCode` を疑う |
+| 3 | 「トマト」で検索 | 完熟トマトが先頭。0 件なら手順 A-4 の取り込みか `languageCode` を疑う |
 | 4 | 商品カードをクリック | `product.html?id=<ID>` が開く |
 | 5 | 右下のランチャー → 「トマトを探して」 | 要約テキスト + 画像付きの商品カード |
 | 6 | カードのリンク | サイト内の商品ページへ飛ぶ (外部サイトではない) |
@@ -740,7 +757,7 @@ gcloud run deploy agentic-commerce \
 
 ---
 
-## 10. 環境変数まとめ
+## A-10. 環境変数まとめ
 
 | サービス | 変数 | 必須 | 値 |
 | --- | --- | --- | --- |
@@ -763,14 +780,14 @@ gcloud run deploy agentic-commerce \
 
 ---
 
-## 11. 任意: 旧 Dialogflow CX 版エージェント
+## A-11. 任意: 旧 Dialogflow CX 版エージェント
 
 [agent/harvest-commerce-agent.zip](agent/harvest-commerce-agent.zip) は Dialogflow CX 形式の
 エージェント定義で、[webhook/](webhook/) と組み合わせて動きます。
 **本サイトのウィジェット (CES API) からは呼び出せません。** 手順は README の
 [(旧) Dialogflow CX 版エージェント定義のインポート](README.md#旧-dialogflow-cx-版エージェント定義のインポート-agentharvest-commerce-agentzip) を参照してください。
 
-## 12. リポジトリ内の生成物
+## A-12. リポジトリ内の生成物
 
 以下はスクリプトが生成するファイルで、いずれも **git 管理外** です
 (サイトの URL や自分のプロジェクトの値が入るため)。

@@ -300,7 +300,7 @@ CES アプリの定義一式 (エージェント・指示文・ウィジェッ�
 - **`deployments` はエクスポートに含まれません。** インポート後に WEB_UI デプロイメントを作り直してください。
 - **MCP ツールセットの `serverAddress` はエクスポート元の Cloud Run URL のまま**です。インポート後に
   自分の `harvest-commerce-mcp` の URL へ差し替える必要があります。
-- 手順の詳細は [SETUP.md の「7. CES エージェントを構成する」](SETUP.md#7-ces-エージェントを構成する) を参照してください。
+- 手順の詳細は [SETUP.md の「A-7. CES エージェントを構成する」](SETUP.md#a-7-ces-エージェントを構成する) を参照してください。
 
 ### (旧) Dialogflow CX 版エージェント定義のインポート (agent/harvest-commerce-agent.zip)
 [agent/harvest-commerce-agent.zip](agent/harvest-commerce-agent.zip) は、CX Agent Studio (Conversational Agents / Dialogflow CX) に**リストア(インポート)可能なエージェント定義**です。以下の機能を含みます:
