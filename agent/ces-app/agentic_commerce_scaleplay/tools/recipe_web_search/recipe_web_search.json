@@ -1,0 +1,9 @@
+{
+  "name": "b900a7b6-02d2-4746-8a5a-c6f43200ba50",
+  "displayName": "recipe_web_search",
+  "googleSearchTool": {
+    "name": "recipe_web_search",
+    "description": "料理名やレシピ名でインターネットを検索し、その料理に必要な材料を調べます。ユーザーがレシピサイトのURLを示さなかった場合に使います。"
+  },
+  "executionType": "SYNCHRONOUS"
+}

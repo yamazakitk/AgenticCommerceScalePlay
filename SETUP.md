@@ -411,6 +411,8 @@ window.COMMERCE_SEARCH_API_URL = "https://harvest-search-api-XXXX.a.run.app";
 ## 6. MCP サーバー (mcp-server) をデプロイする
 
 エージェントがこのサイトのカタログを検索できるようにするための MCP サーバーです。
+公開しているツールは `search_products` / `get_product_details` /
+`fetch_recipe_ingredients` (レシピページを開いて材料を読み取る) の 3 つです。
 
 ```bash
 cd mcp-server
@@ -462,14 +464,38 @@ agent/ces-app/agentic_commerce_scaleplay/
 │   ├── Root_agent/                 入口。要求に応じて下位エージェントへ委譲
 │   ├── Search-Agent/               商品検索・商品詳細。MCP ツールを呼ぶ
 │   ├── Product-Comparison-Agent/   商品比較
+│   ├── Recipe-Agent/               レシピの材料を調べて 1 品目ずつカタログを照会
 │   └── Farewall_Agent/             会話の終了
 │       └── */instruction.txt       各エージェントの指示文 (本文はここ、JSON からは参照のみ)
 ├── tools/                          ウィジェットツール (product_list / product-detail /
-│                                   compare_products) と Python ツール (update_username)
+│                                   compare_products)、Python ツール (update_username)、
+│                                   Google 検索ツール (recipe_web_search)
 ├── toolsets/product-search-tool/   MCP ツールセット (mcp-server を指す)
 ├── guardrails/                     既定の安全性・プロンプトガードレール
 └── pythonEnvFiles/
 ```
+
+エージェントの委譲関係:
+
+```
+Root agent ─┬─> Search-Agent ──> Product-Comparison-Agent
+            ├─> Recipe-Agent
+            └─> Farewall Agent
+```
+
+**Recipe-Agent** (「肉じゃがの材料をそろえて」「このレシピの材料ある？」に対応):
+
+1. レシピサイトの URL を渡されたら、MCP ツール `fetch_recipe_ingredients` でそのページを開いて材料を読み取ります。
+2. URL が無い (または読み取れなかった) 場合は、Google 検索ツール `recipe_web_search` で料理名から材料を調べます。
+3. 材料から分量表記を落とし、食材名ごとに MCP ツール `search_products` を呼んでカタログを照会します。これを材料の数だけ繰り返します。
+4. 見つかった商品を `product_list` ウィジェットで並べ、ヒットしなかった食材は「お取り扱いがありません」と明示してルートエージェントに返します。
+
+> **補足:** 手順 3 は Search-Agent に問い合わせているわけではなく、Search-Agent が使っているのと同じ MCP ツール
+> (`product_search_tool_search_products`) を Recipe-Agent が直接呼んでいます。CES の `AgentTool` は
+> `projects/{project}/locations/{location}/agents/{agent}` 形式の**アプリ外**のエージェントしか参照できず、
+> v1beta にこのコレクションが無いため、同一アプリ内のエージェントを「ツールとして呼んで結果を受け取る」ことが
+> できません。`childAgents` による委譲は制御ごと渡してしまい、食材ごとのループを回せないため、
+> ツールを直接呼ぶ形にしています。
 
 - `agents/Search-Agent/instruction.txt` は
   [agent/ces-search-agent-instruction.txt](agent/ces-search-agent-instruction.txt) と同一内容です
@@ -502,6 +528,19 @@ git diff agent/ces-app                                            # 差分を確
 スクリプトは `agent/ces-app/` を zip に固めて
 `POST .../apps:importApp` に `appContent` (base64) として渡し、完了後にアプリ名と警告を表示します。
 **`warnings` に出たリソースは取り込まれていません**ので、必ず確認してください。
+
+既存アプリへの再インポートでは `importOptions.conflictResolutionStrategy` が必須です
+(省略すると `Only replace or overwrite conflict resolution strategy are supported for reimport.` で失敗します)。
+スクリプトは既定で `REPLACE` を送ります。
+
+| 環境変数 | 既定 | 意味 |
+| --- | --- | --- |
+| `CONFLICT_STRATEGY=REPLACE` | ○ | 表示名が一致するリソースを上書きし、新しい表示名のリソースを追加する。リポジトリ側に無いリソースはそのまま残る |
+| `CONFLICT_STRATEGY=OVERWRITE` | | 既存のエージェント・ツール・ツールセット等をいったん全削除してから取り込む。コンソールでの追加分も消える |
+| `VALIDATE_ONLY=true` | | 検証のみ (ドライラン)。アプリには何も書き込まない |
+
+上書きされると困る編集がコンソール側にあるかどうかは、先に
+`./scripts/export-ces-app.sh` して `git diff agent/ces-app` を見れば分かります。
 
 curl で直接実行する場合:
 
@@ -585,6 +624,16 @@ curl -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
 指示文の中でツールは `product_search_tool_search_products` のように
 **`{ツールセット表示名}_{MCPツール名}`** で参照します。表示名のハイフンはアンダースコアに正規化されるため、
 ツールセット名を変えた場合は指示文の参照名もそろえてください。
+
+Recipe-Agent を手で作る場合は、
+
+1. **Instruction** に
+   [agent/ces-app/agentic_commerce_scaleplay/agents/Recipe-Agent/instruction.txt](agent/ces-app/agentic_commerce_scaleplay/agents/Recipe-Agent/instruction.txt)
+   の内容を貼り付ける
+2. **Tools** で、このツールセットの `fetch_recipe_ingredients` と `search_products`、
+   ウィジェットツール `product_list`、および Google 検索ツール `recipe_web_search` を選択する
+   (`recipe_web_search` は Tools → Google Search で新規作成します)
+3. Root agent の **Sub-agents** に Recipe-Agent を追加し、指示文に委譲のサブタスクを足す
 
 ### 7-C. 公開アクセス付きの WEB_UI デプロイメントを作る
 

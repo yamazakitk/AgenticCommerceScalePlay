@@ -334,12 +334,13 @@ CES アプリの定義一式 (エージェント・指示文・ウィジェッ�
 CES エージェント ──MCP (streamable HTTP + ID トークン)──> mcp-server ──> Retail API
 ```
 
-公開ツールは 2 つです。
+公開ツールは 3 つです。
 
 | ツール | 用途 |
 | --- | --- |
 | `search_products(query, page_size, category)` | 自然文で商品を検索。`productId` / `title` / `subtitle` / `price` / `imageUris` / `uri` を JSON で返すので、そのまま `product_list` ウィジェットに渡せます |
 | `get_product_details(product_id)` | 商品 1 件の詳細 (価格・在庫・評価・産地などの属性) |
+| `fetch_recipe_ingredients(url)` | レシピページを開いて材料を読み取る。`Recipe-Agent` が使います |
 
 実装上のポイント:
 
@@ -348,6 +349,7 @@ CES エージェント ──MCP (streamable HTTP + ID トークン)──> mcp-
 - **商品ページ URL はサーバー側で組み立てます。** カタログの商品に `uri` が無いため、`SITE_BASE_URL` から `.../product.html?id=<商品ID>` を生成します。
 - **CES 互換のためのモンキーパッチ**を入れています (Accept ヘッダー検証の緩和、`title`/`default` を落とした最小のツールスキーマ、`stateless_http` / `json_response`)。参考リポジトリ [shrishmarnad/VertexcommerceMCP](https://github.com/shrishmarnad/VertexcommerceMCP) と同じ対処です。
 - レコメンド (`recently_viewed`) はユーザーイベントを投入していないと常に空を返すため、ツールとしては公開していません。
+- **`fetch_recipe_ingredients` は SSRF 対策込みで実装しています。** ユーザーが渡した URL をサーバー側から取りに行くツールなので、そのままだとメタデータサーバー (169.254.169.254) や VPC 内部を読み出せてしまいます。scheme を http/https に限定し、名前解決した IP がすべてグローバルであることを確認し、リダイレクトは自前で追って 1 ホップごとに同じ検証をかけ、本文は 2MB / 10 秒で打ち切っています。材料は JSON-LD の `schema.org/Recipe` → microdata の `itemprop="recipeIngredient"` → 本文テキストの抜粋、の順に拾います (最後のケースはモデルに読み取らせます)。なお bot 対策の入ったレシピサイトはブロックされることがあり、その場合は Recipe-Agent が検索にフォールバックします。
 
 ### 1. デプロイする
 

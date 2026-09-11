@@ -39,6 +39,15 @@
             </action>
         </step>
     </subtask>
+    <subtask name="レシピの材料の買い揃えの処理">
+        <step name="レシピエージェントへの委譲">
+            <trigger>ユーザーが料理名やレシピサイトのURLを挙げて、その料理に必要な材料・食材を知りたい、または買い揃えたいと求める。</trigger>
+            <action>
+                リクエストを {@AGENT: Recipe-Agent} に委譲します。ユーザーがレシピサイトのURLを示している場合は、そのURLをそのまま引き継いでください。
+                Recipe-Agent から返される結果が、有効な `imageUris` および `uri` のマッピングを維持していることを確認してください。取り扱いのない食材があった旨の報告は、省略せずユーザーに伝えてください。
+            </action>
+        </step>
+    </subtask>
     <subtask name="会話の終了">
         <step name="別れの挨拶エージェントへの委譲">
             <trigger>ユーザーが会話の終了を示す。</trigger>
