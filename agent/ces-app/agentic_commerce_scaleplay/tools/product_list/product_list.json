@@ -1,0 +1,49 @@
+{
+  "name": "3a1084bc-f9fd-4868-acbc-a5779e006c19",
+  "displayName": "product_list",
+  "widgetTool": {
+    "name": "product_list",
+    "widgetType": "PRODUCT_CAROUSEL",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "productDetails": {
+          "type": "ARRAY",
+          "description": "Required. An ordered list of products to be displayed.",
+          "items": {
+            "type": "OBJECT",
+            "properties": {
+              "imageUris": {
+                "type": "ARRAY",
+                "description": "A list of direct URLs to images displaying the product.",
+                "items": {
+                  "type": "STRING"
+                }
+              },
+              "price": {
+                "type": "STRING",
+                "description": "The current selling price of the product."
+              },
+              "productId": {
+                "type": "STRING",
+                "description": "The unique identifier for this specific product."
+              },
+              "subtitle": {
+                "type": "STRING",
+                "description": "A longer, secondary line of text for additional context."
+              },
+              "title": {
+                "type": "STRING",
+                "description": "Required. The primary name of the product as listed."
+              },
+              "uri": {
+                "type": "STRING",
+                "description": "The URL directing users to the full product detail page."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

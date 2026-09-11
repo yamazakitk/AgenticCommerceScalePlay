@@ -7,7 +7,20 @@ search-api/
 
 *.py
 !js/
+js/config.example.js
 !css/
 README.md
 DESIGN.md
 products.csv
+
+# セットアップ用ファイル (サイトの配信物ではない)
+config.env
+config.example.env
+setup.sh
+scripts/
+mcp-server/
+webhook/
+agent/
+SETUP.md
+products.jsonl*
+products_for_bq.csv

@@ -3,6 +3,23 @@
 **Harvest & Co.** は、厳選された新鮮な有機栽培野菜、特選果物、極上の精肉、鮮魚、こだわりの調味料などを提供するプレミアムスーパーマーケットのサンプルECサイトです。
 純粋な HTML、CSS、および JavaScript (Vanilla JS) で記述されており、フレームワークなしで軽快に動作します。
 
+## セットアップ
+
+自分の Google Cloud プロジェクトに環境一式を構築するには、**設定ファイル 1 つを書いて
+スクリプトを 1 つ実行するだけ**です。
+
+```bash
+cp config.example.env config.env
+$EDITOR config.env          # PROJECT_ID を自分のプロジェクトIDに書き換える
+./setup.sh                  # API 有効化から Cloud Run へのデプロイまで一気に実行
+```
+
+Firestore への商品登録、AI Commerce Search のカタログ取り込み、EC サイト・検索 API・
+MCP サーバーの Cloud Run デプロイ、CES エージェントの構成までが順に実行されます。
+詳細と、1 ステップずつ手で行う手順は **[SETUP.md](SETUP.md)** を参照してください。
+
+本 README は各機能の仕組みと設定項目のリファレンスです。
+
 ## 構成ページ
 1. **TOPページ (商品一覧・検索・フィルタ)** (`index.html`): 
    - ヒーローセクションからスムーズなスクロールでカタログへ遷移。
@@ -59,11 +76,11 @@ node import-products-to-firestore.js --project YOUR_PROJECT_ID
 ```
 
 - ドキュメントIDには商品ID（`"1"` 〜 `"28"`）が使用されます。再実行すると同じドキュメントが上書きされるため、何度でも安全に実行できます。
-- コレクション名を変える場合は `--collection <NAME>` を指定してください（フロントエンド側は `js/firebase-config.js` の `FIRESTORE_PRODUCTS_COLLECTION` を同じ値に変更）。
+- コレクション名を変える場合は `--collection <NAME>` を指定してください（フロントエンド側は `js/config.js` の `FIRESTORE_PRODUCTS_COLLECTION` を同じ値に変更）。
 
 ### 2. フロントエンドを Firestore に接続する
 1. [Firebase コンソール](https://console.firebase.google.com/) でウェブアプリを追加し、構成オブジェクト（`apiKey`、`projectId` など）を取得します。
-2. [js/firebase-config.js](js/firebase-config.js) の `window.FIREBASE_CONFIG` を取得した値に書き換えます。
+2. `js/config.js` の `window.FIREBASE_CONFIG` を取得した値に書き換えます (`./setup.sh webconfig` を使うと自動生成されます)。
 3. Firestore のセキュリティルールで `products` コレクションの読み取りを許可します:
    ```
    rules_version = '2';
@@ -94,7 +111,19 @@ Retail API の `servingConfigs:search` は OAuth2 が必須でブラウザから
 ```
 
 ### 1. カタログに商品を取り込む
-Google Cloud Console の **AI Commerce Search → Data** から [products.jsonl](products.jsonl) を
+`products.jsonl` は [js/products.js](js/products.js) から生成します (git 管理外)。商品詳細ページの
+URL (`uri`) を埋め込むため、サイトの URL を渡して実行してください。
+
+```bash
+SITE_BASE_URL=https://<サイトのURL> python3 js/convert_products.py
+```
+
+Retail の Product スキーマには黙って落ちる罠があります（エラーになりません）。フィールド名は
+`url` ではなく **`uri`**、`attributes` は配列ではなく **`map<string, CustomAttribute>`**、
+`languageCode: "ja"` が無いと日本語のトークナイズが効きません。上記スクリプトはこれらを満たした
+形で出力します。
+
+Google Cloud Console の **AI Commerce Search → Data** から `products.jsonl` を
 `default_catalog` の `default_branch` にインポートします。取り込み後、Console の Data ページで
 **件数が 28 件になっていること**を必ず確認してください（一部だけ取り込まれると、その商品は検索に出てきません）。
 
@@ -126,7 +155,8 @@ Cloud Run のサービスアカウントには **`roles/retail.viewer`** を付�
 ```
 
 ### 3. サイト側に接続先を設定する
-[js/search-config.js](js/search-config.js) に、デプロイで得られた Cloud Run の URL を設定します。
+`js/config.js` に、デプロイで得られた Cloud Run の URL を設定します
+(`./setup.sh webconfig` を使うと自動生成されます)。
 ```javascript
 window.COMMERCE_SEARCH_API_URL = "https://harvest-search-api-xxxx.a.run.app";
 ```
@@ -206,20 +236,19 @@ curl -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
 アプリID・バージョンID は `GET https://ces.googleapis.com/v1beta/projects/YOUR_PROJECT/locations/us/apps` および `.../apps/{app}/versions` で確認できます。
 
 ### 2. サイト側に接続先を設定する
-[js/agent-widget.js](js/agent-widget.js) の先頭を書き換えます:
+`js/config.js` (`./setup.sh webconfig` が生成。雛形は [js/config.example.js](js/config.example.js)) を書き換えます:
 
 ```javascript
 window.AGENT_STUDIO_CONFIG = {
-  projectId: "yamazakitlab",
+  projectId: "YOUR_PROJECT_ID",
   location: "us",                                 // CES アプリのリージョン
   appId: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",  // ← アプリID (表示名ではなく name)
-  deploymentId: "web-widget",                     // ← 手順1で作ったデプロイメント
-  apiHost: "https://ces.googleapis.com",
-  chatTitle: "Harvest & Co. お買い物アシスタント",
-  subtitle: "商品選びのご相談をどうぞ",
-  greeting: "こんにちは！..."
+  deploymentId: "web-widget"                      // ← 手順1で作ったデプロイメント
 };
 ```
+
+表示まわりの文言 (`chatTitle` / `subtitle` / `greeting`) と `apiHost` は
+[js/agent-widget.js](js/agent-widget.js) に既定値があり、同じオブジェクトに書けば上書きできます。
 
 *(※ `appId` が `YOUR_` で始まるデフォルト値のままの場合、ウィジェットは読み込まれません)*
 
@@ -252,7 +281,28 @@ CES は商品ウィジェットを**2通りの経路**で返してきます。�
 
   ※ドキュメントにある `versions/-` (ドラフトを直接指す指定) は `PATCH` のバリデーションで弾かれます。
 
-### エージェント定義のインポート (agent/harvest-commerce-agent.zip)
+### アプリ定義のエクスポート / インポート (agent/ces-app/)
+CES アプリの定義一式 (エージェント・指示文・ウィジェットツール・MCP ツールセット・ガードレール) を
+[agent/ces-app/](agent/ces-app/) にエクスポートしてあります。`exportApp` / `importApp` API を使うと、
+アプリまるごとをファイルとして出し入れできます。
+
+```bash
+# コンソールでの編集をリポジトリに取り込む
+./scripts/export-ces-app.sh YOUR_PROJECT_ID YOUR_APP_ID
+
+# リポジトリの定義からアプリを作る (アプリIDを指定すると既存アプリを丸ごと置き換え)
+./scripts/import-ces-app.sh YOUR_PROJECT_ID [APP_ID]
+```
+
+- `exportApp` は長時間実行オペレーションを返し、完了時の `response.appContent` に
+  アプリのフォルダ構成を zip 圧縮したものが base64 で入ります。スクリプトはそれを展開して
+  `agent/ces-app/` に書き出します (差分が読めるよう、zip ではなくファイルツリーで管理しています)。
+- **`deployments` はエクスポートに含まれません。** インポート後に WEB_UI デプロイメントを作り直してください。
+- **MCP ツールセットの `serverAddress` はエクスポート元の Cloud Run URL のまま**です。インポート後に
+  自分の `harvest-commerce-mcp` の URL へ差し替える必要があります。
+- 手順の詳細は [SETUP.md の「7. CES エージェントを構成する」](SETUP.md#7-ces-エージェントを構成する) を参照してください。
+
+### (旧) Dialogflow CX 版エージェント定義のインポート (agent/harvest-commerce-agent.zip)
 [agent/harvest-commerce-agent.zip](agent/harvest-commerce-agent.zip) は、CX Agent Studio (Conversational Agents / Dialogflow CX) に**リストア(インポート)可能なエージェント定義**です。以下の機能を含みます:
 
 - **商品検索** (`search.products` インテント): 「トマトを探して」→ webhook が Firestore を検索し、商品カード(画像・価格・評価)のカルーセルを表示

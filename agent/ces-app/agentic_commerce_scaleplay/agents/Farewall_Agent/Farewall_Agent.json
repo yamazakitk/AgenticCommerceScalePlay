@@ -1,0 +1,13 @@
+{
+  "name": "4dcbb7c0-1b1e-40bc-893e-0b3a0a641c3c",
+  "displayName": "Farewall Agent",
+  "modelSettings": {
+    "model": "gemini-3.5-flash",
+    "temperature": 1.0
+  },
+  "instruction": "agents/Farewall_Agent/instruction.txt",
+  "tools": ["end_session"],
+  "afterModelCallbacks": [{
+    "pythonCode": "agents/Farewall_Agent/after_model_callbacks/after_model_callbacks_01/python_code.py"
+  }]
+}

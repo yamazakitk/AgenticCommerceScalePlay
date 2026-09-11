@@ -1,6 +1,6 @@
 // Product Database for Harvest & Co.
 //
-// 商品データの取得元は Firestore です (js/firebase-config.js で接続設定)。
+// 商品データの取得元は Firestore です (js/config.js で接続設定)。
 // Firebase が未設定の場合や読み込みに失敗した場合は、以下のローカル配列に
 // フォールバックします。各ページは window.productsReady (Promise) を await
 // してから window.products を参照してください。
@@ -587,7 +587,7 @@ const localProducts = [
 // FIRESTORE INTEGRATION
 // ==========================================================================
 // Firebase Web SDK (ESM, CDN) を動的 import して Firestore から商品カタログを
-// 読み込みます。firebase-config.js が未設定 (YOUR_ プレフィックスのまま) の
+// 読み込みます。js/config.js が未設定 (YOUR_ プレフィックスのまま) の
 // 場合はローカルカタログをそのまま使用します。
 
 const FIREBASE_SDK_VERSION = "10.12.2";

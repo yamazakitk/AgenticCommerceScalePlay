@@ -19,28 +19,26 @@
 //   webWidgetConfig.securitySettings.allowedOrigins     = [このサイトのオリジン]
 //   → 新しいオリジン (独自ドメイン等) を足すときは allowedOrigins も更新すること。
 //
-// appId が "YOUR_" で始まるデフォルト値のままの場合、ウィジェットは
-// 読み込まれません (サイトは通常どおり動作します)。
-
-window.AGENT_STUDIO_CONFIG = {
-  projectId: "yamazakitlab",                            // エージェントが属する GCP プロジェクトID
-  location: "us",                                       // CES アプリのリージョン
-  appId: "578f4b51-97fc-4f59-a5a9-965d99c2dfea",        // アプリID (表示名: agentic_commerce_scaleplay_2026_07_06)
-  deploymentId: "web-widget",                           // 公開アクセス付き WEB_UI デプロイメント
-  apiHost: "https://ces.googleapis.com",
-  chatTitle: "Harvest & Co. お買い物アシスタント",
-  subtitle: "商品選びのご相談をどうぞ",
-  greeting: "こんにちは！Harvest & Co. のお買い物アシスタントです。お探しの食材やご予算をお聞かせください。"
-};
+// 接続先 (projectId / location / appId / deploymentId) は js/config.js の
+// window.AGENT_STUDIO_CONFIG で設定します。appId が "YOUR_" で始まるデフォルト値の
+// ままの場合、ウィジェットは読み込まれません (サイトは通常どおり動作します)。
 
 (function () {
-  const cfg = window.AGENT_STUDIO_CONFIG;
-  const isConfigured = !!(cfg &&
-    cfg.projectId && !cfg.projectId.startsWith("YOUR_") &&
+  // 表示まわりの文言はここが既定値。js/config.js で上書きできる。
+  const cfg = Object.assign({
+    location: "us",
+    deploymentId: "web-widget",
+    apiHost: "https://ces.googleapis.com",
+    chatTitle: "Harvest & Co. お買い物アシスタント",
+    subtitle: "商品選びのご相談をどうぞ",
+    greeting: "こんにちは！Harvest & Co. のお買い物アシスタントです。お探しの食材やご予算をお聞かせください。"
+  }, window.AGENT_STUDIO_CONFIG || {});
+
+  const isConfigured = !!(cfg.projectId && !cfg.projectId.startsWith("YOUR_") &&
     cfg.appId && !cfg.appId.startsWith("YOUR_"));
 
   if (!isConfigured) {
-    console.info("[Harvest & Co.] CX Agent Studio 未設定のため、エージェントウィジェットは無効です。(js/agent-widget.js)");
+    console.info("[Harvest & Co.] CX Agent Studio 未設定のため、エージェントウィジェットは無効です。(js/config.js)");
     return;
   }
 

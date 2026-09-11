@@ -8,6 +8,14 @@ npm-debug.log*
 # Environment / secrets
 .env
 .env.*
+config.env
+
+# setup.sh が生成する (js/config.example.js が雛形)
+js/config.js
+
+# js/convert_products.py が生成する (取り込み先サイトのURLを含む)
+products.jsonl
+products_for_bq.csv
 service-account*.json
 
 # OS files
