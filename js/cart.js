@@ -1,6 +1,6 @@
 // Cart Management System for Harvest & Co.
 
-// AI Commerce Search の接続先は js/search-config.js で設定します。
+// AI Commerce Search の接続先は js/config.js で設定します。
 
 // Initialize Cart state
 let cart = [];
