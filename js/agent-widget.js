@@ -212,12 +212,25 @@
       font-size: 1rem; font-weight: 600; line-height: 1.3;
     }
     .harvest-agent-header p { margin: 2px 0 0; font-size: 0.75rem; opacity: 0.75; }
-    .harvest-agent-header .harvest-agent-close {
-      margin-left: auto; background: none; border: none; color: #FFFFFF;
-      font-size: 1.5rem; line-height: 1; cursor: pointer; padding: 0 var(--space-xs, 4px);
-      opacity: 0.8;
+    .harvest-agent-actions {
+      margin-left: auto; display: flex; align-items: center; gap: var(--space-xs, 4px);
     }
+    .harvest-agent-header .harvest-agent-close,
+    .harvest-agent-header .harvest-agent-clear {
+      background: none; border: none; color: #FFFFFF;
+      line-height: 1; cursor: pointer; padding: 0 var(--space-xs, 4px); opacity: 0.8;
+    }
+    .harvest-agent-header .harvest-agent-close { font-size: 1.5rem; }
+    .harvest-agent-header .harvest-agent-clear {
+      display: flex; align-items: center; padding: var(--space-xs, 4px);
+      border-radius: var(--radius-sm, 6px);
+    }
+    .harvest-agent-header .harvest-agent-clear svg { width: 18px; height: 18px; display: block; }
     .harvest-agent-header .harvest-agent-close:hover { opacity: 1; }
+    .harvest-agent-header .harvest-agent-clear:hover:not(:disabled) {
+      opacity: 1; background: rgba(255, 255, 255, 0.15);
+    }
+    .harvest-agent-header .harvest-agent-clear:disabled { opacity: 0.35; cursor: default; }
 
     .harvest-agent-log {
       flex: 1; overflow-y: auto; padding: var(--space-lg, 24px);
@@ -298,7 +311,7 @@
 
   const ADD_TO_CART_HASH = /#add-to-cart-(\d+)$/;
 
-  let panel, log, statusEl, textarea, sendButton, launcher;
+  let panel, log, statusEl, textarea, sendButton, clearButton, launcher;
   let busy = false;
 
   function escapeHtml(text) {
@@ -486,6 +499,7 @@
     busy = value;
     sendButton.disabled = value;
     textarea.disabled = value;
+    clearButton.disabled = value;
   }
 
   // 会話の見た目もページ遷移をまたいで復元する (サーバー側の文脈は残っているので、
@@ -508,6 +522,28 @@
     const entries = loadHistory();
     entries.push(widgets && widgets.length ? { role, text, widgets } : { role, text });
     saveHistory(entries);
+  }
+
+  function showGreeting() {
+    if (!cfg.greeting) return;
+    // 挨拶も履歴に含める。含めないとページ遷移のたびに消えてしまう。
+    appendMessage("agent", cfg.greeting);
+    recordHistory("agent", cfg.greeting);
+  }
+
+  // 画面の履歴だけ消してもサーバー側には会話の文脈が残るので、セッションIDごと捨てて
+  // 新しい会話を始める。トークンはセッション名に紐づくので一緒に無効化する。
+  function clearConversation() {
+    if (busy) return;
+    sessionStorage.removeItem(HISTORY_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
+    chatToken = null;
+    chatTokenExpiry = 0;
+
+    log.querySelectorAll(".harvest-agent-msg").forEach((el) => el.remove());
+    setStatus("");
+    showGreeting();
+    textarea.focus();
   }
 
   function openPanel() {
@@ -600,7 +636,15 @@
           <h2>${escapeHtml(cfg.chatTitle || "お買い物アシスタント")}</h2>
           ${cfg.subtitle ? `<p>${escapeHtml(cfg.subtitle)}</p>` : ""}
         </div>
-        <button type="button" class="harvest-agent-close" aria-label="閉じる">&times;</button>
+        <div class="harvest-agent-actions">
+          <button type="button" class="harvest-agent-clear" aria-label="会話の履歴を消す" title="会話の履歴を消す">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v5M14 11v5"/>
+            </svg>
+          </button>
+          <button type="button" class="harvest-agent-close" aria-label="閉じる">&times;</button>
+        </div>
       </div>
       <div class="harvest-agent-log" id="harvest-agent-log">
         <div class="harvest-agent-status" id="harvest-agent-status" hidden></div>
@@ -618,8 +662,15 @@
     statusEl = panel.querySelector("#harvest-agent-status");
     textarea = panel.querySelector("textarea");
     sendButton = panel.querySelector('button[type="submit"]');
+    clearButton = panel.querySelector(".harvest-agent-clear");
 
     panel.querySelector(".harvest-agent-close").addEventListener("click", closePanel);
+    clearButton.addEventListener("click", () => {
+      if (busy) return;
+      // 元に戻せないので一度だけ確認する (履歴が挨拶だけなら聞かない)
+      if (loadHistory().length > 1 && !window.confirm("会話の履歴を消して、新しい会話を始めますか？")) return;
+      clearConversation();
+    });
     panel.querySelector("form").addEventListener("submit", (event) => {
       event.preventDefault();
       submit();
@@ -656,10 +707,8 @@
     const history = loadHistory();
     if (history.length) {
       history.forEach((entry) => appendMessage(entry.role, entry.text, false, entry.widgets));
-    } else if (cfg.greeting) {
-      // 挨拶も履歴に含める。含めないとページ遷移のたびに消えてしまう。
-      appendMessage("agent", cfg.greeting);
-      recordHistory("agent", cfg.greeting);
+    } else {
+      showGreeting();
     }
   }
 
