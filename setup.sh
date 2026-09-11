@@ -44,10 +44,27 @@ head1() { printf '\n%s\n' "${C_B}=== $* ===${C_0}" >&2; }
 # =============================================================================
 load_config() {
   [ -f "$CONFIG_FILE" ] || die "$CONFIG_FILE がありません。cp config.example.env config.env してから編集してください。"
+
+  # 実行時に渡された環境変数 (FORCE_AGENT_IMPORT=true ./setup.sh agent など) を
+  # config.env より優先する。素直に source すると config.env の値で上書きされてしまい、
+  # 指定したつもりの一時的な上書きが黙って無視されるため。
+  local overrides key names=()
+  overrides="$(mktemp)"
+  while IFS= read -r key; do
+    if [ -n "${!key+x}" ]; then
+      printf '%s=%q\n' "$key" "${!key}" >> "$overrides"
+      names+=("$key")
+    fi
+  done < <(sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' "$CONFIG_FILE" | sort -u)
+
   set -a
   # shellcheck disable=SC1090
   . "$CONFIG_FILE"
+  # shellcheck disable=SC1090
+  . "$overrides"
   set +a
+  rm -f "$overrides"
+  [ ${#names[@]} -eq 0 ] || log "環境変数で上書き: ${names[*]}"
 
   [ -n "${PROJECT_ID:-}" ] || die "config.env の PROJECT_ID を設定してください。"
 

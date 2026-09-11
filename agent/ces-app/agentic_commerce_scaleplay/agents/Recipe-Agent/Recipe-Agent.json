@@ -1,0 +1,14 @@
+{
+  "name": "759551a2-23e6-41b4-bbec-7072d06ea619",
+  "displayName": "Recipe-Agent",
+  "modelSettings": {
+    "model": "gemini-3.5-flash",
+    "temperature": 1.0
+  },
+  "instruction": "agents/Recipe-Agent/instruction.txt",
+  "tools": ["recipe_web_search", "product_list"],
+  "toolsets": [{
+    "toolset": "product-search-tool",
+    "toolIds": ["fetch_recipe_ingredients", "search_products"]
+  }]
+}

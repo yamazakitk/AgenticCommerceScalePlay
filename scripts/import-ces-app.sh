@@ -5,8 +5,18 @@
 #   ./scripts/import-ces-app.sh <PROJECT_ID> [APP_ID] [LOCATION]
 #
 #   APP_ID を省略  … 新しいアプリとして作成される (IDは自動採番)
-#   APP_ID を指定  … そのIDのアプリを「置き換える」。既存アプリがあれば
-#                     中身は丸ごと上書きされるので注意 (差分マージではない)
+#   APP_ID を指定  … そのIDのアプリに取り込む (再インポート)
+#
+# 環境変数:
+#   CONFLICT_STRATEGY=REPLACE (既定) / OVERWRITE
+#     REPLACE   … 表示名が一致するリソースを上書きし、新しい表示名のリソースを追加する。
+#                 リポジトリ側に無いリソースはそのまま残る。
+#     OVERWRITE … 既存のエージェント・ツール・ツールセット等をいったん全削除してから
+#                 取り込む。コンソールでの追加分も消えるので注意。
+#   VALIDATE_ONLY=true … 検証だけ行い、アプリには何も書き込まない (ドライラン)
+#
+# 再インポートでは conflictResolutionStrategy が必須です (指定しないと
+# "Only replace or overwrite conflict resolution strategy are supported" で失敗します)。
 #
 # importApp はアプリのフォルダ構成を zip 圧縮したものを base64 で受け取る。
 # zip のルート直下にアプリのフォルダが 1 つある構成にする必要がある。
@@ -16,6 +26,8 @@ set -euo pipefail
 PROJECT_ID="${1:?usage: $0 <PROJECT_ID> [APP_ID] [LOCATION]}"
 APP_ID="${2:-}"
 LOCATION="${3:-us}"
+CONFLICT_STRATEGY="${CONFLICT_STRATEGY:-REPLACE}"
+VALIDATE_ONLY="${VALIDATE_ONLY:-false}"
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SRC_DIR="$REPO_DIR/agent/ces-app"
@@ -31,16 +43,24 @@ trap 'rm -f "$TMP_ZIP" "$TMP_ZIP.json"' EXIT
 
 python3 -c '
 import sys, json, base64
-req = {"appContent": base64.b64encode(open(sys.argv[1], "rb").read()).decode()}
-if sys.argv[2]:
-    req["appId"] = sys.argv[2]
+zip_path, app_id, folder, strategy, validate_only = sys.argv[1:6]
+req = {
+    "appContent": base64.b64encode(open(zip_path, "rb").read()).decode(),
+    "importOptions": {
+        "conflictResolutionStrategy": strategy,
+        "validateOnly": validate_only == "true",
+    },
+}
+if app_id:
+    req["appId"] = app_id
 else:
     # displayName は新規作成時のみ指定できる (再インポート時に渡すと INVALID_ARGUMENT)
-    req["displayName"] = sys.argv[3]
-json.dump(req, open(sys.argv[1] + ".json", "w"))
-' "$TMP_ZIP" "$APP_ID" "$APP_FOLDER"
+    req["displayName"] = folder
+json.dump(req, open(zip_path + ".json", "w"))
+' "$TMP_ZIP" "$APP_ID" "$APP_FOLDER" "$CONFLICT_STRATEGY" "$VALIDATE_ONLY"
 
-echo "インポート中: projects/$PROJECT_ID/locations/$LOCATION (appId=${APP_ID:-<自動採番>})"
+echo "インポート中: projects/$PROJECT_ID/locations/$LOCATION (appId=${APP_ID:-<自動採番>}," \
+     "strategy=$CONFLICT_STRATEGY, validateOnly=$VALIDATE_ONLY)"
 TOKEN="$(gcloud auth print-access-token)"
 OP=$(curl -sf -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   "https://ces.googleapis.com/v1beta/projects/$PROJECT_ID/locations/$LOCATION/apps:importApp" \

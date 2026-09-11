@@ -203,7 +203,30 @@ CX Agent Studio のエージェント (「アプリ」) は Dialogflow CX では
 1. `POST {session}:generateChatToken` — **認証なしで呼べます**。セッション専用の短命 JWT (約1時間) が返ります。
 2. `POST {session}:streamRunSession` — 1 のトークンを `Authorization: Bearer` に載せて発話を送ります。応答は JSON 配列がチャンク分割でストリーミングされ、逐次描画します。
 
-会話履歴はセッション名でサーバー側に保持されるため、履歴の送り直しは不要です。セッションIDと表示用のログは `sessionStorage` に保存しており、商品ページやカートへ遷移しても会話が続きます。
+会話履歴はセッション名でサーバー側に保持されるため、履歴の送り直しは不要です。セッションIDと表示用のログは `sessionStorage` に保存しており、商品ページやカートへ遷移しても会話が続きます。ヘッダーのゴミ箱ボタンを押すと、表示中のログだけでなくセッションIDとチャットトークンも破棄して新しい会話を始めます (画面だけ消してもサーバー側の文脈は残るため)。
+
+### 検索結果をまとめてカートに追加
+エージェントが商品を 2 件以上返したとき、カードの下に「N 点まとめてカートに追加」ボタンが出ます。押すと [js/cart.js](js/cart.js) の `addItemsToCart()` が呼ばれ、`localStorage` のカートに一括で入ります。
+
+- **このサイトのカタログに実在する商品だけ**を対象にします。エージェント側のカタログにしか無い商品は件数に数えません。
+- 売り切れの商品は飛ばし、「N 点は売り切れのため追加していません。」とボタンの下に出します。
+- 同じ商品IDが重複していても 1 件として扱います。
+- 保存もトーストも最後に 1 回だけです (1 件ずつ `addToCart()` を呼ぶと商品数だけトーストが積み上がるため)。
+
+### 「全部カートに入れて」と話しかけて追加する
+ボタンを押さずに、発話でも一括追加できます。CES のウィジェットツールは `widgetType` が固定の列挙型 (`PRODUCT_CAROUSEL` / `PRODUCT_DETAILS` / `PRODUCT_COMPARISON`) なので、カート操作用のウィジェットツールは作れません。代わりにウィジェットが既に解釈している `[widget:name]{json}` と同じ記法を拡張し、エージェントに次のテキストを返させています。
+
+```
+承知しました。ご覧いただいた 3 点をカートにお入れします。
+
+[cart:add]
+{ "productIds": ["1", "3", "5"] }
+```
+
+- 指示は [Root_agent](agent/ces-app/agentic_commerce_scaleplay/agents/Root_agent/instruction.txt) と [Search-Agent](agent/ces-app/agentic_commerce_scaleplay/agents/Search-Agent/instruction.txt) に入っています。レシピの材料をまとめて買う導線でも同じ記法を使います。
+- [js/agent-widget.js](js/agent-widget.js) の `splitWidgets()` が `[widget:…]` と `[cart:add]` の両方を本文から切り離すので、マーカーも生 JSON も画面には出ません。
+- **カート追加を実行するのは `submit()` の中だけです。** 描画側 (`setMessageContent`) でやると、`sessionStorage` の履歴を復元するたびに再実行されて二重に追加されてしまいます。履歴にはマーカー付きの生テキストがそのまま残りますが、復元時は表示だけを行います。
+- 在庫切れや取り扱い外の商品はサイト側で弾き、「1 点をカートに追加しました。1 点は売り切れ・1 点は取り扱い外のため追加していません。」のようにフキダシの末尾へ出します。エージェント側では在庫を判断させていません (在庫はサイトが持っているため)。
 
 ### 1. 公開アクセス付きの WEB_UI デプロイメントを作る
 `generateChatToken` を認証なしで呼ぶには、`channelType: WEB_UI` かつ公開アクセスを有効にしたデプロイメントが必要です。**許可オリジンは必ず自サイトのオリジンだけに絞ってください**(空にすると全オリジンから利用可能になります)。
@@ -300,7 +323,7 @@ CES アプリの定義一式 (エージェント・指示文・ウィジェッ�
 - **`deployments` はエクスポートに含まれません。** インポート後に WEB_UI デプロイメントを作り直してください。
 - **MCP ツールセットの `serverAddress` はエクスポート元の Cloud Run URL のまま**です。インポート後に
   自分の `harvest-commerce-mcp` の URL へ差し替える必要があります。
-- 手順の詳細は [SETUP.md の「7. CES エージェントを構成する」](SETUP.md#7-ces-エージェントを構成する) を参照してください。
+- 手順の詳細は [SETUP.md の「A-7. CES エージェントを構成する」](SETUP.md#a-7-ces-エージェントを構成する) を参照してください。
 
 ### (旧) Dialogflow CX 版エージェント定義のインポート (agent/harvest-commerce-agent.zip)
 [agent/harvest-commerce-agent.zip](agent/harvest-commerce-agent.zip) は、CX Agent Studio (Conversational Agents / Dialogflow CX) に**リストア(インポート)可能なエージェント定義**です。以下の機能を含みます:
@@ -334,12 +357,13 @@ CES アプリの定義一式 (エージェント・指示文・ウィジェッ�
 CES エージェント ──MCP (streamable HTTP + ID トークン)──> mcp-server ──> Retail API
 ```
 
-公開ツールは 2 つです。
+公開ツールは 3 つです。
 
 | ツール | 用途 |
 | --- | --- |
 | `search_products(query, page_size, category)` | 自然文で商品を検索。`productId` / `title` / `subtitle` / `price` / `imageUris` / `uri` を JSON で返すので、そのまま `product_list` ウィジェットに渡せます |
 | `get_product_details(product_id)` | 商品 1 件の詳細 (価格・在庫・評価・産地などの属性) |
+| `fetch_recipe_ingredients(url)` | レシピページを開いて材料を読み取る。`Recipe-Agent` が使います |
 
 実装上のポイント:
 
@@ -348,6 +372,7 @@ CES エージェント ──MCP (streamable HTTP + ID トークン)──> mcp-
 - **商品ページ URL はサーバー側で組み立てます。** カタログの商品に `uri` が無いため、`SITE_BASE_URL` から `.../product.html?id=<商品ID>` を生成します。
 - **CES 互換のためのモンキーパッチ**を入れています (Accept ヘッダー検証の緩和、`title`/`default` を落とした最小のツールスキーマ、`stateless_http` / `json_response`)。参考リポジトリ [shrishmarnad/VertexcommerceMCP](https://github.com/shrishmarnad/VertexcommerceMCP) と同じ対処です。
 - レコメンド (`recently_viewed`) はユーザーイベントを投入していないと常に空を返すため、ツールとしては公開していません。
+- **`fetch_recipe_ingredients` は SSRF 対策込みで実装しています。** ユーザーが渡した URL をサーバー側から取りに行くツールなので、そのままだとメタデータサーバー (169.254.169.254) や VPC 内部を読み出せてしまいます。scheme を http/https に限定し、名前解決した IP がすべてグローバルであることを確認し、リダイレクトは自前で追って 1 ホップごとに同じ検証をかけ、本文は 2MB / 10 秒で打ち切っています。材料は JSON-LD の `schema.org/Recipe` → microdata の `itemprop="recipeIngredient"` → 本文テキストの抜粋、の順に拾います (最後のケースはモデルに読み取らせます)。なお bot 対策の入ったレシピサイトはブロックされることがあり、その場合は Recipe-Agent が検索にフォールバックします。
 
 ### 1. デプロイする
 

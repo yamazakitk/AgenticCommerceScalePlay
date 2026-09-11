@@ -3,5 +3,5 @@
   "displayName": "Root agent",
   "instruction": "agents/Root_agent/instruction.txt",
   "tools": ["update_username"],
-  "childAgents": ["Farewall Agent", "Search-Agent"]
+  "childAgents": ["Farewall Agent", "Search-Agent", "Recipe-Agent"]
 }

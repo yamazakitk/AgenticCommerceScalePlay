@@ -1,0 +1,24 @@
+# Cloud Run (gcloud run deploy --source .) にアップロードするファイルの除外設定。
+#
+# このファイルが無いと gcloud は .gitignore を流用してしまい、setup.sh が生成する
+# js/config.js (.gitignore 済み) がアップロードから漏れてサイトが動かなくなります。
+# js/config.js をここに書かないのは意図的です。
+
+.git/
+.gitignore
+node_modules/
+__pycache__/
+*.log
+
+# 秘密情報。絶対にアップロードしない
+.env
+.env.*
+config.env
+service-account*.json
+
+# 生成物・デプロイに不要なもの
+products.jsonl
+products_for_bq.csv
+.DS_Store
+Thumbs.db
+.gstack/
